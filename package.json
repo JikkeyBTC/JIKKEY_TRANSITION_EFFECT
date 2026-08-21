@@ -1,0 +1,37 @@
+{
+  "name": "electron-burn-transition-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Framework-neutral Electron Light/Dark burn transition demo",
+  "main": "dist-electron/main.js",
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "pnpm build:electron && concurrently -k -s first \"pnpm dev:renderer\" \"pnpm dev:app\"",
+    "dev:renderer": "vite --host 127.0.0.1 --port 5173 --strictPort",
+    "dev:app": "wait-on http://127.0.0.1:5173 && electron dist-electron/main.js --dev-server-url=http://127.0.0.1:5173",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:renderer": "vite build",
+    "build": "pnpm build:electron && pnpm build:renderer",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test tests/e2e/electron.spec.ts tests/e2e/visual.spec.ts",
+    "benchmark": "pnpm build && playwright test tests/e2e/performance.spec.ts --reporter=list",
+    "capture:reference": "pnpm build:electron && electron scripts/capture-reference.cjs",
+    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.13.3",
+    "@types/pngjs": "6.0.5",
+    "concurrently": "10.0.4",
+    "electron": "43.4.0",
+    "happy-dom": "20.11.2",
+    "playwright": "1.62.1",
+    "pngjs": "7.0.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.1",
+    "vitest": "4.1.10",
+    "wait-on": "9.1.0"
+  }
+}

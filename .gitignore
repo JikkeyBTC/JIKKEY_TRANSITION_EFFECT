@@ -1,0 +1,8 @@
+node_modules/
+dist-electron/
+dist-renderer/
+test-results/
+playwright-report/
+docs/superpowers/
+tests/fixtures/reference/*.png
+*.log

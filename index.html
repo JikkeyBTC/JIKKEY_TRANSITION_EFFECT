@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self' ws:; object-src 'none'; base-uri 'none'; frame-src 'none'"
+    />
+    <title>Electron Burn Transition</title>
+  </head>
+  <body>
+    <main class="theme-stage">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">ELECTRON · WEBGL2</p>
+          <p class="hint">Click the switch to ignite the transition.</p>
+        </div>
+        <button
+          class="theme-toggle"
+          type="button"
+          data-theme-toggle
+          aria-pressed="true"
+          aria-label="Switch to Light"
+          aria-disabled="true"
+          disabled
+        >
+          <span class="toggle-dot" aria-hidden="true"></span>
+          <span data-toggle-label>Switch to Light</span>
+        </button>
+      </header>
+      <section class="hero" aria-live="polite">
+        <p class="hero-kicker">CURRENT APPEARANCE</p>
+        <h1 data-theme-word>DARK</h1>
+        <p class="hero-copy">A compositor capture becomes one GPU texture. The old theme burns away and the live theme remains beneath it.</p>
+      </section>
+      <footer>
+        <span>2.5 SECOND REFERENCE CURVE</span>
+        <span>CLICK-ORIGIN RADIAL BURN</span>
+      </footer>
+    </main>
+    <script type="module" src="/src/demo.ts"></script>
+  </body>
+</html>

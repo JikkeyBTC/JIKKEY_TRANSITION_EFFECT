@@ -1,0 +1,183 @@
+{
+  "source": "https://mattrothenberg.com/demos/burn-transition",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "origin": {
+    "x": 640,
+    "y": 360
+  },
+  "frameTimes": [
+    0,
+    200,
+    1350,
+    2500
+  ],
+  "selectors": {
+    "canvas": "#canvas"
+  },
+  "timingMode": "absolute-click-time-deadlines",
+  "timingUncertainty": {
+    "schedulingToleranceMs": 34,
+    "note": "Timing error is measured when capturePage starts; remote animation start and compositor completion remain observational."
+  },
+  "electron": "43.4.0",
+  "chromium": "150.0.7871.224",
+  "supported": true,
+  "status": "captured",
+  "support": {
+    "canvasFound": true,
+    "requestPaint": true,
+    "webgl2": true,
+    "texElementImage2D": true,
+    "location": "https://mattrothenberg.com/demos/burn-transition",
+    "title": "Burn Transition — HTML-in-Canvas Demo"
+  },
+  "darkToLight": {
+    "clickTime": 379.89999997615814,
+    "observations": [
+      {
+        "elapsed": 0,
+        "deadlineAt": 379.89999997615814,
+        "schedulingStartedAt": 380.30000001192093,
+        "scheduledWaitMs": 0,
+        "captureStartedAt": 420.10000002384186,
+        "captureCompletedAt": 431.30000001192093,
+        "observedElapsed": 40.200000047683716,
+        "captureCompletedElapsed": 51.40000003576279,
+        "timingErrorMs": 40.200000047683716,
+        "withinTolerance": false,
+        "size": {
+          "width": 1280,
+          "height": 720
+        },
+        "file": "dark-to-light-0000.png"
+      },
+      {
+        "elapsed": 200,
+        "deadlineAt": 579.8999999761581,
+        "schedulingStartedAt": 439.60000002384186,
+        "scheduledWaitMs": 140.29999995231628,
+        "captureStartedAt": 580.3999999761581,
+        "captureCompletedAt": 586.1000000238419,
+        "observedElapsed": 200.5,
+        "captureCompletedElapsed": 206.20000004768372,
+        "timingErrorMs": 0.5,
+        "withinTolerance": true,
+        "size": {
+          "width": 1280,
+          "height": 720
+        },
+        "file": "dark-to-light-0200.png"
+      },
+      {
+        "elapsed": 1350,
+        "deadlineAt": 1729.8999999761581,
+        "schedulingStartedAt": 595.3999999761581,
+        "scheduledWaitMs": 1134.5,
+        "captureStartedAt": 1749.1000000238419,
+        "captureCompletedAt": 1756.699999988079,
+        "observedElapsed": 1369.2000000476837,
+        "captureCompletedElapsed": 1376.800000011921,
+        "timingErrorMs": 19.200000047683716,
+        "withinTolerance": true,
+        "size": {
+          "width": 1280,
+          "height": 720
+        },
+        "file": "dark-to-light-1350.png"
+      },
+      {
+        "elapsed": 2500,
+        "deadlineAt": 2879.899999976158,
+        "schedulingStartedAt": 1769.8999999761581,
+        "scheduledWaitMs": 1110,
+        "captureStartedAt": 2880.300000011921,
+        "captureCompletedAt": 2890.800000011921,
+        "observedElapsed": 2500.400000035763,
+        "captureCompletedElapsed": 2510.900000035763,
+        "timingErrorMs": 0.40000003576278687,
+        "withinTolerance": true,
+        "size": {
+          "width": 1280,
+          "height": 720
+        },
+        "file": "dark-to-light-2500.png"
+      }
+    ]
+  },
+  "lightToDark": {
+    "clickTime": 3090.599999964237,
+    "observations": [
+      {
+        "elapsed": 0,
+        "deadlineAt": 3090.599999964237,
+        "schedulingStartedAt": 3090.899999976158,
+        "scheduledWaitMs": 0,
+        "captureStartedAt": 3106.099999964237,
+        "captureCompletedAt": 3117.099999964237,
+        "observedElapsed": 15.5,
+        "captureCompletedElapsed": 26.5,
+        "timingErrorMs": 15.5,
+        "withinTolerance": true,
+        "size": {
+          "width": 1280,
+          "height": 720
+        },
+        "file": "light-to-dark-0000.png"
+      },
+      {
+        "elapsed": 200,
+        "deadlineAt": 3290.599999964237,
+        "schedulingStartedAt": 3124.5,
+        "scheduledWaitMs": 166.0999999642372,
+        "captureStartedAt": 3291.399999976158,
+        "captureCompletedAt": 3304.699999988079,
+        "observedElapsed": 200.80000001192093,
+        "captureCompletedElapsed": 214.10000002384186,
+        "timingErrorMs": 0.800000011920929,
+        "withinTolerance": true,
+        "size": {
+          "width": 1280,
+          "height": 720
+        },
+        "file": "light-to-dark-0200.png"
+      },
+      {
+        "elapsed": 1350,
+        "deadlineAt": 4440.599999964237,
+        "schedulingStartedAt": 3311.5,
+        "scheduledWaitMs": 1129.0999999642372,
+        "captureStartedAt": 4446.799999952316,
+        "captureCompletedAt": 4479.099999964237,
+        "observedElapsed": 1356.199999988079,
+        "captureCompletedElapsed": 1388.5,
+        "timingErrorMs": 6.199999988079071,
+        "withinTolerance": true,
+        "size": {
+          "width": 1280,
+          "height": 720
+        },
+        "file": "light-to-dark-1350.png"
+      },
+      {
+        "elapsed": 2500,
+        "deadlineAt": 5590.599999964237,
+        "schedulingStartedAt": 4515.199999988079,
+        "scheduledWaitMs": 1075.3999999761581,
+        "captureStartedAt": 5597.899999976158,
+        "captureCompletedAt": 5630.5,
+        "observedElapsed": 2507.300000011921,
+        "captureCompletedElapsed": 2539.900000035763,
+        "timingErrorMs": 7.300000011920929,
+        "withinTolerance": true,
+        "size": {
+          "width": 1280,
+          "height": 720
+        },
+        "file": "light-to-dark-2500.png"
+      }
+    ]
+  }
+}
