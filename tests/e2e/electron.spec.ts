@@ -11,7 +11,7 @@ const waitForDemoReady: DemoReadiness = async (_app, page) => {
   await page.waitForFunction(() => document.documentElement.hasAttribute('data-burn-ready')
     && Boolean(window.__burnTest));
   await page.evaluate(() => document.documentElement.removeAttribute('data-test-mode'));
-  await page.getByRole('button', { name: /switch to light/i }).waitFor();
+  await page.locator('[data-theme-toggle]').waitFor();
 };
 
 async function launchDemo(
@@ -32,6 +32,22 @@ async function launchDemo(
     } catch (cleanupError) {
       console.error('Electron cleanup after launch failure failed', cleanupError);
     }
+    throw error;
+  }
+}
+
+async function launchProductionDemo(): Promise<{ app: ElectronApplication; page: Page }> {
+  let app: ElectronApplication | undefined;
+  try {
+    app = await electron.launch({
+      executablePath: electronPath,
+      args: [path.join(process.cwd(), 'dist-electron', 'main.js')],
+    });
+    const page = await app.firstWindow();
+    await page.locator('html[data-burn-ready]').waitFor();
+    return { app, page };
+  } catch (error) {
+    await app?.close().catch(() => undefined);
     throw error;
   }
 }
@@ -78,17 +94,112 @@ test('preserves the readiness error when launch cleanup also fails', async () =>
   }
 });
 
+test('exposes a compact semantic switch backed by a decorative canvas', async () => {
+  const { app, page } = await launchDemo();
+  try {
+    const toggle = page.getByRole('switch', { name: 'Dark mode' });
+    const canvas = toggle.locator('canvas[data-jelly-toggle]');
+
+    await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(canvas).toHaveAttribute('aria-hidden', 'true');
+    const backingSize = await canvas.evaluate((element) => ({
+      width: (element as HTMLCanvasElement).width,
+      height: (element as HTMLCanvasElement).height,
+      pixelRatio: Math.min(Math.max(devicePixelRatio || 1, 1), 3),
+    }));
+    expect(backingSize.width).toBe(Math.round(52 * backingSize.pixelRatio));
+    expect(backingSize.height).toBe(Math.round(30 * backingSize.pixelRatio));
+
+    const resizedBacking = await canvas.evaluate((element) => {
+      Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
+      window.dispatchEvent(new Event('resize'));
+      const canvasElement = element as HTMLCanvasElement;
+      return { width: canvasElement.width, height: canvasElement.height };
+    });
+    expect(resizedBacking).toEqual({ width: 104, height: 60 });
+
+    const geometry = await toggle.evaluate((element) => {
+      const control = element.getBoundingClientRect();
+      const visual = element.querySelector('canvas')!.getBoundingClientRect();
+      return {
+        control: { width: control.width, height: control.height },
+        visual: { width: visual.width, height: visual.height },
+        pointerEvents: getComputedStyle(element.querySelector('canvas')!).pointerEvents,
+      };
+    });
+    expect(geometry.control.width).toBeGreaterThanOrEqual(44);
+    expect(geometry.control.height).toBeGreaterThanOrEqual(44);
+    expect(geometry.visual).toEqual({ width: 52, height: 30 });
+    expect(geometry.pointerEvents).toBe('none');
+
+    const paintedPixels = await canvas.evaluate((element) => {
+      const canvasElement = element as HTMLCanvasElement;
+      const context = canvasElement.getContext('2d')!;
+      const pixels = context.getImageData(
+        0,
+        0,
+        canvasElement.width,
+        canvasElement.height,
+      ).data;
+      let count = 0;
+      for (let alpha = 3; alpha < pixels.length; alpha += 4) {
+        if ((pixels[alpha] ?? 0) > 0) count += 1;
+      }
+      return count;
+    });
+    expect(paintedPixels).toBeGreaterThan(400);
+  } finally {
+    await app.close();
+  }
+});
+
+test('uses a system-color fallback when forced colors are active', async () => {
+  const { app, page } = await launchDemo();
+  try {
+    await page.emulateMedia({ forcedColors: 'active' });
+    const toggle = page.getByRole('switch', { name: 'Dark mode' });
+    const styles = await toggle.evaluate((element) => ({
+      borderStyle: getComputedStyle(element).borderStyle,
+      canvasDisplay: getComputedStyle(element.querySelector('canvas')!).display,
+    }));
+
+    expect(styles).toEqual({ borderStyle: 'solid', canvasDisplay: 'none' });
+  } finally {
+    await app.close();
+  }
+});
+
+test('animates and settles the jelly canvas in production mode', async () => {
+  const { app, page } = await launchProductionDemo();
+  try {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const toggle = page.getByRole('switch', { name: 'Dark mode' });
+    const canvas = toggle.locator('canvas[data-jelly-toggle]');
+
+    await toggle.click();
+    await expect(canvas).toHaveAttribute('data-jelly-animating', 'true');
+    await expect(canvas).not.toHaveAttribute('data-jelly-animating', 'true', {
+      timeout: 1_500,
+    });
+    await page.waitForTimeout(100);
+    await expect(canvas).not.toHaveAttribute('data-jelly-animating', 'true');
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  } finally {
+    await app.close();
+  }
+});
+
 test('burns from dark to light without exposing an intermediate blank frame', async () => {
   const { app, page } = await launchDemo();
   try {
-    const button = page.locator('[data-theme-toggle]');
+    const button = page.getByRole('switch', { name: 'Dark mode' });
     const overlay = page.locator('canvas[data-burn-overlay]');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await expect(button).toHaveAccessibleName(/switch to light/i);
+    await expect(button).toHaveAttribute('aria-checked', 'true');
     const initialToggleBox = await button.boundingBox();
     expect(initialToggleBox).not.toBeNull();
 
-    await button.click({ position: { x: 18, y: 18 } });
+    await button.press('Space');
     await expect(overlay).toBeVisible();
     await expect(button).toBeDisabled();
 
@@ -103,7 +214,7 @@ test('burns from dark to light without exposing an intermediate blank frame', as
 
     await expect(overlay).toBeHidden();
     await expect(button).toBeEnabled();
-    await expect(button).toHaveAccessibleName(/switch to dark/i);
+    await expect(button).toHaveAttribute('aria-checked', 'false');
     await expect(page.locator('[data-theme-word]')).toHaveText('LIGHT');
     expect(await button.boundingBox()).toEqual(initialToggleBox);
   } finally {
@@ -115,12 +226,29 @@ test('keeps test-mode animation deterministic when the host prefers reduced moti
   const { app, page } = await launchDemo();
   try {
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    const button = page.locator('[data-theme-toggle]');
+    const button = page.getByRole('switch', { name: 'Dark mode' });
+    const jellyCanvas = button.locator('canvas[data-jelly-toggle]');
+    await page.evaluate(() => {
+      let requests = 0;
+      const requestFrame = window.requestAnimationFrame.bind(window);
+      window.requestAnimationFrame = (callback) => {
+        requests += 1;
+        return requestFrame(callback);
+      };
+      (window as typeof window & { __jellyFrameRequests: () => number })
+        .__jellyFrameRequests = () => requests;
+    });
     await button.click();
 
     await expect(page.locator('canvas[data-burn-overlay]')).toBeVisible();
     await expect(button).toBeDisabled();
     await page.waitForFunction(() => window.__burnTest!.hasPendingFrame());
+    await page.evaluate(() => window.__burnTest!.step(16));
+    await expect(button).toHaveAttribute('aria-checked', 'false');
+    await expect(jellyCanvas).not.toHaveAttribute('data-jelly-animating', 'true');
+    expect(await page.evaluate(() => (
+      window as typeof window & { __jellyFrameRequests: () => number }
+    ).__jellyFrameRequests())).toBe(0);
   } finally {
     await app.close();
   }
@@ -129,7 +257,7 @@ test('keeps test-mode animation deterministic when the host prefers reduced moti
 test('keeps disabled ownership with the first toggle when a concurrent call is busy', async () => {
   const { app, page } = await launchDemo();
   try {
-    const button = page.locator('[data-theme-toggle]');
+    const button = page.getByRole('switch', { name: 'Dark mode' });
     await button.click();
     await page.waitForFunction(() => window.__burnTest!.hasPendingFrame());
 
@@ -210,7 +338,7 @@ test('keeps muted text at WCAG AA contrast in both themes', async () => {
 test('completes safely when the window resizes during the effect', async () => {
   const { app, page } = await launchDemo();
   try {
-    await page.getByRole('button', { name: /switch to light/i }).click();
+    await page.getByRole('switch', { name: 'Dark mode' }).click();
     await expect(page.locator('canvas[data-burn-overlay]')).toBeVisible();
     await page.waitForFunction(() => window.__burnTest!.hasPendingFrame());
     await app.evaluate(({ BrowserWindow }) => {

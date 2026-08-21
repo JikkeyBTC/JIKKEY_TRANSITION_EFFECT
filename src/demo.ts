@@ -1,11 +1,12 @@
 import { BurnTransition, type BurnOrigin, type BurnToggleResult } from './burn-transition';
 import { ManualBurnClock } from './demo-clock';
+import { JellyAnimator, paintJellyToggle, resolveJellyPalette } from './jelly-toggle';
 import './style.css';
 
 type Theme = 'light' | 'dark';
 
 const button = document.querySelector<HTMLButtonElement>('[data-theme-toggle]')!;
-const label = document.querySelector<HTMLElement>('[data-toggle-label]')!;
+const jellyCanvas = document.querySelector<HTMLCanvasElement>('[data-jelly-toggle]')!;
 const word = document.querySelector<HTMLElement>('[data-theme-word]')!;
 const testMode = new URLSearchParams(location.search).get('test') === '1';
 const manualClock = testMode ? new ManualBurnClock() : null;
@@ -14,18 +15,32 @@ const transition = new BurnTransition(
     ? { clock: manualClock, respectReducedMotion: false }
     : { respectReducedMotion: true },
 );
-
 let theme: Theme = 'dark';
 let activeToggle = false;
+let jellyPalette = resolveJellyPalette(jellyCanvas, true);
+const jelly = new JellyAnimator({
+  initialChecked: true,
+  motion: testMode ? 'never' : 'respect-preference',
+  onFrame: (state) => paintJellyToggle(jellyCanvas, state, jellyPalette),
+  onAnimatingChange: (animating) => {
+    if (animating) jellyCanvas.dataset.jellyAnimating = 'true';
+    else delete jellyCanvas.dataset.jellyAnimating;
+  },
+});
+const jellyLifecycle = new AbortController();
+window.addEventListener('resize', () => {
+  jellyPalette = resolveJellyPalette(jellyCanvas, theme === 'dark');
+  jelly.redraw();
+}, { signal: jellyLifecycle.signal });
 
 function syncTheme(next: Theme): void {
   theme = next;
   document.documentElement.dataset.theme = next;
   const dark = next === 'dark';
   word.textContent = dark ? 'DARK' : 'LIGHT';
-  label.textContent = dark ? 'Switch to Light' : 'Switch to Dark';
-  button.setAttribute('aria-pressed', String(dark));
-  button.setAttribute('aria-label', dark ? 'Switch to Light' : 'Switch to Dark');
+  button.setAttribute('aria-checked', String(dark));
+  jellyPalette = resolveJellyPalette(jellyCanvas, dark);
+  jelly.setChecked(dark);
 }
 
 function buttonOrigin(event?: MouseEvent): BurnOrigin {
@@ -55,7 +70,11 @@ button.addEventListener('click', (event) => {
   void toggleAt(buttonOrigin(event));
 });
 
-window.addEventListener('beforeunload', () => transition.destroy(), { once: true });
+window.addEventListener('beforeunload', () => {
+  jellyLifecycle.abort();
+  jelly.destroy();
+  transition.destroy();
+}, { once: true });
 
 if (testMode) document.documentElement.dataset.testMode = 'true';
 await transition.prepare();

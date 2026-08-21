@@ -71,7 +71,7 @@ test('reports real-clock burn frame pacing at 1920x1080', async ({}, testInfo) =
       gpuInfo: await electronApp.getGPUInfo('basic'),
     }));
 
-    await page.getByRole('button', { name: /switch to light/i }).click();
+    await page.getByRole('switch', { name: 'Dark mode' }).click();
     const overlay = page.locator('canvas[data-burn-overlay]');
     await expect(overlay).toBeVisible();
     const measurement = await page.evaluate((durationMs) => new Promise<{

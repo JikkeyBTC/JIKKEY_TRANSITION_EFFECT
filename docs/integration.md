@@ -151,6 +151,63 @@ const dispose = () => burn.destroy();
 window.addEventListener('beforeunload', dispose, { once: true });
 ```
 
+### Optional compact jelly switch
+
+Use a real button for input and accessibility; the Canvas is decorative only:
+
+```html
+<button
+  class="theme-toggle"
+  data-theme-toggle
+  type="button"
+  role="switch"
+  aria-label="Dark mode"
+  aria-checked="true"
+>
+  <canvas
+    class="jelly-toggle-canvas"
+    data-jelly-toggle
+    width="52"
+    height="30"
+    aria-hidden="true"
+  ></canvas>
+</button>
+```
+
+Create one `JellyAnimator`, paint its initial state without animation, and update it inside the same synchronous theme commit passed to `BurnTransition`:
+
+```ts
+import {
+  JellyAnimator,
+  paintJellyToggle,
+  resolveJellyPalette,
+} from './jelly-toggle';
+
+let jellyPalette = resolveJellyPalette(jellyCanvas, currentTheme === 'dark');
+const jelly = new JellyAnimator({
+  initialChecked: currentTheme === 'dark',
+  motion: 'respect-preference',
+  onFrame: (state) => paintJellyToggle(jellyCanvas, state, jellyPalette),
+});
+
+function setTheme(next: Theme): void {
+  const dark = next === 'dark';
+  currentTheme = next;
+  document.documentElement.dataset.theme = next;
+  themeButton.setAttribute('aria-checked', String(dark));
+  jellyPalette = resolveJellyPalette(jellyCanvas, dark);
+  jelly.setChecked(dark);
+}
+
+const jellyLifecycle = new AbortController();
+window.addEventListener('resize', () => {
+  jellyPalette = resolveJellyPalette(jellyCanvas, currentTheme === 'dark');
+  jelly.redraw();
+}, { signal: jellyLifecycle.signal });
+```
+
+Keep the Canvas at 52 × 30 CSS pixels with `pointer-events: none`, but keep the actual button at least 44 × 44 CSS pixels. On teardown call `jellyLifecycle.abort()` before `jelly.destroy()` and `burn.destroy()`. The resize redraw keeps the backing store sharp after zoom or monitor-DPR changes; the included CSS also supplies `:focus-visible` and `forced-colors` fallbacks.
+
 ## 4. Layering and limits
 
 The overlay defaults to z-index 2147483646 and blocks pointer interactions only while capture or animation is active. Lower `zIndex` only if the app intentionally keeps native controls above the transition. The bridge encodes the highest available `NativeImage` scale representation; the renderer derives the backing store from the decoded PNG dimensions and validates its aspect ratio against the CSS viewport. `maxBackingPixels` may resample that texture on very large or high-DPI displays. `capturePage()` captures the renderer WebContents; separately stacked `WebContentsView`, video overlay, and OS-native child surfaces are not part of this texture and must be hidden or coordinated by the host app.

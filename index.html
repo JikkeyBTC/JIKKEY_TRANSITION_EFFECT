@@ -20,13 +20,19 @@
           class="theme-toggle"
           type="button"
           data-theme-toggle
-          aria-pressed="true"
-          aria-label="Switch to Light"
+          role="switch"
+          aria-label="Dark mode"
+          aria-checked="true"
           aria-disabled="true"
           disabled
         >
-          <span class="toggle-dot" aria-hidden="true"></span>
-          <span data-toggle-label>Switch to Light</span>
+          <canvas
+            class="jelly-toggle-canvas"
+            data-jelly-toggle
+            width="52"
+            height="30"
+            aria-hidden="true"
+          ></canvas>
         </button>
       </header>
       <section class="hero" aria-live="polite">

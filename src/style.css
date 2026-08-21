@@ -6,6 +6,13 @@
   --muted: #7d7d77;
   --line: rgba(255, 255, 255, 0.12);
   --button: rgba(255, 255, 255, 0.08);
+  --jelly-track: rgba(255, 255, 255, 0.10);
+  --jelly-track-active: rgba(255, 115, 19, 0.22);
+  --jelly-track-border: rgba(255, 255, 255, 0.18);
+  --jelly-fill: #ff7313;
+  --jelly-shadow: rgba(255, 94, 0, 0.38);
+  --jelly-highlight: rgba(255, 255, 255, 0.64);
+  --focus-ring: #3399ff;
   background: var(--surface);
   color: var(--ink);
 }
@@ -17,6 +24,10 @@
   --muted: #6f6f68;
   --line: rgba(20, 20, 18, 0.14);
   --button: rgba(20, 20, 18, 0.06);
+  --jelly-track: rgba(20, 20, 18, 0.10);
+  --jelly-track-active: rgba(255, 115, 19, 0.19);
+  --jelly-track-border: rgba(20, 20, 18, 0.20);
+  --jelly-shadow: rgba(206, 65, 0, 0.30);
 }
 
 * { box-sizing: border-box; }
@@ -43,18 +54,58 @@ button { font: inherit; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  inline-size: 170px;
-  min-height: 42px;
-  padding: 0 15px 0 11px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--button);
-  color: var(--ink);
+  inline-size: 60px;
+  min-inline-size: 44px;
+  block-size: 44px;
+  min-block-size: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
   cursor: pointer;
 }
 .theme-toggle:disabled { cursor: wait; opacity: 0.72; }
-.toggle-dot { width: 20px; height: 20px; border-radius: 50%; background: var(--ink); box-shadow: 0 0 0 4px var(--button); }
+.theme-toggle:focus-visible { outline: 3px solid var(--focus-ring); outline-offset: 2px; }
+.jelly-toggle-canvas {
+  display: block;
+  inline-size: 52px;
+  block-size: 30px;
+  pointer-events: none;
+}
+
+@media (forced-colors: active) {
+  .theme-toggle {
+    position: relative;
+    border: 1px solid ButtonText;
+    color: ButtonText;
+    forced-color-adjust: auto;
+  }
+  .theme-toggle:disabled { opacity: 1; }
+  .theme-toggle:focus-visible { outline-color: Highlight; }
+  .jelly-toggle-canvas { display: none; }
+  .theme-toggle::before {
+    content: "";
+    inline-size: 40px;
+    block-size: 22px;
+    border: 2px solid ButtonText;
+    border-radius: 999px;
+  }
+  .theme-toggle::after {
+    content: "";
+    position: absolute;
+    inset-block-start: 13px;
+    inset-inline-start: 11px;
+    inline-size: 16px;
+    block-size: 16px;
+    border: 2px solid ButtonText;
+    border-radius: 50%;
+    background: Canvas;
+  }
+  .theme-toggle[aria-checked="true"]::after {
+    background: Highlight;
+    transform: translateX(22px);
+  }
+}
 
 .hero { align-self: center; width: min(780px, 82vw); margin: 0 auto; text-align: center; }
 .hero-kicker { color: var(--muted); }
