@@ -128,7 +128,7 @@ declare function createJellyToggle3D(options: JellyToggle3DOptions): JellyToggle
 
 ## 4. Accessibility
 
-- The reusable component default remains 96 × 52 CSS pixels with an 88 × 44 canvas. The standalone demo scales that host to 192 × 104 and its visible canvas to 176 × 88, while retaining `pointer-events: none` on the canvas.
+- The reusable component default remains 96 × 52 CSS pixels with an 88 × 44 canvas. The standalone demo scales that host to 384 × 208 and its visible canvas to 352 × 176, while retaining `pointer-events: none` on the canvas.
 - The OFF material keeps the reference orange. As the endpoint moves toward ON, the material interpolates to `#22c55e`; the CSS fallback uses the same green ON state and defers to system colors in forced-colors mode.
 - The factory sets `type="button"`, `role="switch"`, and `aria-checked`. It removes `aria-pressed` so the control exposes one state model.
 - The accessible name stays fixed. `label` wins, followed by an existing `aria-label`, then `Jelly toggle`.

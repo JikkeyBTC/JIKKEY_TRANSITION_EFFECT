@@ -572,8 +572,8 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
     expect(fake.buffers.length).toBe(immutableBufferCount);
 
     expect(renderer.resize(200, 100, 4)).toBe(true);
-    expect(canvas.width).toBe(264);
-    expect(canvas.height).toBe(132);
+    expect(canvas.width).toBe(528);
+    expect(canvas.height).toBe(264);
 
     fake.emitUncaptured(new Error('synthetic validation error'));
     expect(renderer.stats.uncapturedErrors).toBe(1);
@@ -581,8 +581,8 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
     const buffersBeforeReadback = renderer.stats.buffersCreated;
     const buffersDestroyedBeforeReadback = renderer.stats.buffersDestroyed;
     const readback = await renderer.readDiagnostics();
-    expect(readback).toMatchObject({ width: 264, height: 132 });
-    expect(readback.attachmentA).toHaveLength(264 * 132 * 4);
+    expect(readback).toMatchObject({ width: 528, height: 264 });
+    expect(readback.attachmentA).toHaveLength(528 * 264 * 4);
     expect(readback.attachmentA[0]).toBe(1);
     expect(readback.attachmentA.at(-1)).toBe(1);
     expect(readback.attachmentB[0]).toBe(2);
@@ -604,13 +604,15 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
   it('rejects overlapping diagnostic readbacks and releases staging buffers', async () => {
     const fake = createFakeGpu();
     const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
     installGpu(canvas, fake);
     const renderer = await createJellyRenderer(canvas, 'diagnostic');
     const activeBuffersBefore = renderer.stats.buffersCreated - renderer.stats.buffersDestroyed;
 
     const first = renderer.readDiagnostics();
     await expect(renderer.readDiagnostics()).rejects.toThrow(/already in flight/i);
-    await expect(first).resolves.toMatchObject({ width: 264, height: 132 });
+    await expect(first).resolves.toMatchObject({ width: 88, height: 44 });
     expect(renderer.stats.buffersCreated - renderer.stats.buffersDestroyed).toBe(activeBuffersBefore);
 
     renderer.destroy();

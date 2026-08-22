@@ -30,30 +30,30 @@ body {
 }
 
 #jelly-toggle {
-  inline-size: 192px;
-  block-size: 104px;
+  inline-size: 384px;
+  block-size: 208px;
   filter: drop-shadow(0 10px 12px rgb(74 47 18 / 12%));
 }
 
 #jelly-toggle .jelly-toggle-3d__canvas {
-  inline-size: 176px;
-  block-size: 88px;
+  inline-size: 352px;
+  block-size: 176px;
 }
 
 #jelly-toggle .jelly-toggle-3d__fallback {
-  inline-size: 104px;
-  block-size: 56px;
-  border-width: 4px;
+  inline-size: 208px;
+  block-size: 112px;
+  border-width: 8px;
 }
 
 #jelly-toggle .jelly-toggle-3d__fallback::before {
-  inline-size: 40px;
-  block-size: 40px;
-  inset: 4px auto auto 4px;
+  inline-size: 80px;
+  block-size: 80px;
+  inset: 8px auto auto 8px;
 }
 
 #jelly-toggle[aria-checked='true'] .jelly-toggle-3d__fallback::before {
-  transform: translateX(48px);
+  transform: translateX(96px);
 }
 
 html[data-jelly-fixture] #jelly-toggle {

@@ -46,10 +46,10 @@ test('launches an isolated semantic jelly switch and handles native input', asyn
     const toggle = page.getByRole('switch', { name: 'Jelly toggle' });
     const canvas = toggle.locator('canvas');
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
-    await expect(toggle).toHaveCSS('width', '192px');
-    await expect(toggle).toHaveCSS('height', '104px');
-    await expect(canvas).toHaveCSS('width', '176px');
-    await expect(canvas).toHaveCSS('height', '88px');
+    await expect(toggle).toHaveCSS('width', '384px');
+    await expect(toggle).toHaveCSS('height', '208px');
+    await expect(canvas).toHaveCSS('width', '352px');
+    await expect(canvas).toHaveCSS('height', '176px');
     expect(await page.evaluate(() => window.burnCapture)).toBeUndefined();
     expect(await app.evaluate(({ BrowserWindow }) => {
       const contents = BrowserWindow.getAllWindows()[0]!.webContents as unknown as {
@@ -134,7 +134,7 @@ test('clamps DPR backing dimensions at 1, 2, and 3', async () => {
   const { app, page } = await launchJelly();
   try {
     const canvas = page.getByRole('switch').locator('canvas');
-    for (const [dpr, expected] of [[1, [176, 88]], [2, [264, 132]], [3, [264, 132]]] as const) {
+    for (const [dpr, expected] of [[1, [352, 176]], [2, [528, 264]], [3, [528, 264]]] as const) {
       await page.evaluate((next) => window.__jellyTest!.setDevicePixelRatio(next), dpr);
       await drain(page, 20);
       expect(await canvas.evaluate((node) => [

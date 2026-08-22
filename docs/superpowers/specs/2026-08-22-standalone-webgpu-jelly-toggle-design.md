@@ -22,8 +22,8 @@
 ## 2. 목표
 
 1. WICG 예제의 WebGPU renderer, SDF, raymarch 재질, 조명, 그림자, caustic, TAA, 물리 상수를 직접 기반으로 동일한 시각 언어를 재현한다.
-2. 재사용 컴포넌트는 88 × 44 CSS px, 독립 데모는 176 × 88 CSS px의 On/Off 토글로 재구성한다.
-3. 실제 입력 표면은 재사용 기본 96 × 52 CSS px, 독립 데모 192 × 104 CSS px의 native `<button>`으로 유지한다.
+2. 재사용 컴포넌트는 88 × 44 CSS px, 독립 데모는 352 × 176 CSS px의 On/Off 토글로 재구성한다.
+3. 실제 입력 표면은 재사용 기본 96 × 52 CSS px, 독립 데모 384 × 208 CSS px의 native `<button>`으로 유지한다.
 4. 실험적인 HTML-in-Canvas API 없이 Electron의 표준 WebGPU canvas에서 실행한다.
 5. WebGPU가 없거나 device가 손실돼도 접근 가능한 On/Off 동작은 CSS fallback으로 유지한다.
 6. 기존 burn transition 페이지, 테스트 계약, 캡처 preload, 기본 실행 경로를 변경하지 않는다.
@@ -56,10 +56,10 @@ HTML-in-Canvas 관련 코드는 이식하지 않는다. 이식 범위는 젤리 
 
 ### 5.1 크기와 배치
 
-- native button hit target: 재사용 기본 96 × 52 CSS px, 독립 데모 192 × 104 CSS px
-- WebGPU canvas가 차지하는 보이는 영역: 재사용 기본 88 × 44 CSS px, 독립 데모 176 × 88 CSS px
+- native button hit target: 재사용 기본 96 × 52 CSS px, 독립 데모 384 × 208 CSS px
+- WebGPU canvas가 차지하는 보이는 영역: 재사용 기본 88 × 44 CSS px, 독립 데모 352 × 176 CSS px
 - canvas는 button의 정중앙에 놓고 `pointer-events: none`, `aria-hidden="true"`로 둔다.
-- 내부 backing scale은 `clamp(devicePixelRatio, 1, 3)`을 적용하되 최대 264 × 132 px로 제한한다. 따라서 확대된 독립 데모는 DPR 1.5 이상에서 최대 backing을 유지한다.
+- 내부 backing scale은 `clamp(devicePixelRatio, 1, 3)`을 적용하되 최대 528 × 264 px로 제한한다. 따라서 확대된 독립 데모는 DPR 1.5 이상에서 최대 backing을 유지한다.
 - DPR, zoom, monitor 이동을 `ResizeObserver`와 해상도 재검사로 반영한다.
 - 페이지는 중립적인 밝은 ground 위 중앙에 토글 하나를 배치한다. 주변 설명 UI는 renderer crop과 겹치지 않는다.
 
@@ -250,7 +250,7 @@ canvas backing size, camera projection, material/light uniform, device generatio
 WebGPU는 주 시각 경로지만 버튼 기능의 전제 조건은 아니다.
 
 - `navigator.gpu` 부재, adapter/device 요청 실패, shader/pipeline 실패 시 CSS fallback을 즉시 표시한다.
-- fallback도 현재 host의 hit target(재사용 기본 96 × 52, 독립 데모 192 × 104), `role="switch"`, `aria-checked`, click/Space/Enter 동작을 유지한다.
+- fallback도 현재 host의 hit target(재사용 기본 96 × 52, 독립 데모 384 × 208), `role="switch"`, `aria-checked`, click/Space/Enter 동작을 유지한다.
 - device loss가 발생하면 현재 semantic state는 유지하고 canvas를 숨긴 뒤 fallback을 표시한다.
 - instance lifetime 동안 첫 device loss에 대해서만 한 번의 bounded automatic retry를 수행한다.
 - automatic retry가 실패하면 추가 loop를 만들지 않고 fallback에 머문다.
@@ -435,7 +435,7 @@ tests/
 완료로 판단하려면 다음 조건을 모두 충족해야 한다.
 
 1. `pnpm dev:jelly`가 기존 burn 화면과 별개의 Electron 창에서 jelly page를 연다.
-2. 재사용 88 × 44 또는 독립 데모 176 × 88 canvas 안에서 OFF는 원본 최소 압축 형상, ON은 원본 최대 Anchored Bridge 형상으로 보인다.
+2. 재사용 88 × 44 또는 독립 데모 352 × 176 canvas 안에서 OFF는 원본 최소 압축 형상, ON은 원본 최대 Anchored Bridge 형상으로 보인다.
 3. 원본 17-point PBD/SDF/raymarch/TAA/material 계수와 MIT 고지가 코드와 문서에 보존된다.
 4. click, Space, Enter, rapid reversal, reduced motion, forced-colors, WebGPU fallback이 의미상 올바르다.
 5. 수렴 뒤 RAF와 GPU command submission이 0이다.

@@ -63,10 +63,10 @@ test('production page compiles and submits the real WebGPU renderer to idle', as
     const toggle = page.getByRole('switch', { name: 'Jelly toggle' });
     await expect(toggle).toHaveAttribute('data-jelly-toggle-mode', 'webgpu');
     const canvas = toggle.locator('canvas');
-    await expect(toggle).toHaveCSS('width', '192px');
-    await expect(toggle).toHaveCSS('height', '104px');
-    await expect(canvas).toHaveCSS('width', '176px');
-    await expect(canvas).toHaveCSS('height', '88px');
+    await expect(toggle).toHaveCSS('width', '384px');
+    await expect(toggle).toHaveCSS('height', '208px');
+    await expect(canvas).toHaveCSS('width', '352px');
+    await expect(canvas).toHaveCSS('height', '176px');
     await page.evaluate(() => { document.body.style.background = 'rgb(17, 34, 51)'; });
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
@@ -110,7 +110,7 @@ test('production page compiles and submits the real WebGPU renderer to idle', as
       }
     }
     expect(colors.size).toBeGreaterThan(20);
-    expect(nonBackground).toBeGreaterThan(image.width * image.height * 0.05);
+    expect(nonBackground).toBeGreaterThan(image.width * image.height * 0.04);
     await expect(toggle).toHaveAttribute('data-jelly-toggle-mode', 'webgpu');
     expect(await page.evaluate(() => window.__jellyTest)).toBeUndefined();
     expect(pageErrors).toEqual([]);

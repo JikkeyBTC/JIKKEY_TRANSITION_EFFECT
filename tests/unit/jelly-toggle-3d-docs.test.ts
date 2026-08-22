@@ -82,8 +82,8 @@ describe('standalone WebGPU jelly toggle integration contract', () => {
     expect(readme).toContain('The default burn page uses WebGL2 for the transition');
     expect(readme).toContain('does not initialize WebGPU');
     expect(readme).toContain('The standalone jelly page uses standard WebGPU through TypeGPU');
-    expect(readme).toContain('192 × 104');
-    expect(readme).toContain('176 × 88');
+    expect(readme).toContain('384 × 208');
+    expect(readme).toContain('352 × 176');
     expect(readme).toContain('[standalone WebGPU jelly toggle](docs/jelly-toggle-integration.md)');
     expect(readme).not.toMatch(/(?:default )?burn page (?:itself )?uses WebGPU/i);
 
@@ -91,8 +91,8 @@ describe('standalone WebGPU jelly toggle integration contract', () => {
     expect(burnGuide).toContain('[standalone WebGPU jelly toggle](jelly-toggle-integration.md)');
 
     const jellyGuide = readFileSync('docs/jelly-toggle-integration.md', 'utf8');
-    expect(jellyGuide).toContain('standalone demo scales that host to 192 × 104');
-    expect(jellyGuide).toContain('176 × 88');
+    expect(jellyGuide).toContain('standalone demo scales that host to 384 × 208');
+    expect(jellyGuide).toContain('352 × 176');
     expect(jellyGuide).toContain('reusable component default remains 96 × 52');
   });
 

@@ -25,8 +25,8 @@ import {
   type RendererResourceAccounting,
 } from './utils';
 
-const MAX_BACKING_WIDTH = 264;
-const MAX_BACKING_HEIGHT = 132;
+const MAX_BACKING_WIDTH = 528;
+const MAX_BACKING_HEIGHT = 264;
 const MIN_DPR = 1;
 const MAX_DPR = 3;
 const CAMERA_FOV = Math.PI / 4;

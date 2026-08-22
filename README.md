@@ -55,7 +55,7 @@ await burn.toggle({
 
 Light and Dark modes must retain identical DOM geometry during the overlay animation.
 
-The default burn demo's Canvas 2D `role="switch"` keeps a fixed accessible name (`Dark mode`) and reflects the committed theme through `aria-checked`. Its 52 × 30 Canvas is decorative and pointer-transparent; the real button retains a 60 × 44 hit target. The animator runs `requestAnimationFrame` only while settling and snaps immediately for reduced motion. The reusable WebGPU component defaults to a 96 × 52 host, while the standalone demo presents a larger 192 × 104 host with a 176 × 88 jelly canvas.
+The default burn demo's Canvas 2D `role="switch"` keeps a fixed accessible name (`Dark mode`) and reflects the committed theme through `aria-checked`. Its 52 × 30 Canvas is decorative and pointer-transparent; the real button retains a 60 × 44 hit target. The animator runs `requestAnimationFrame` only while settling and snaps immediately for reduced motion. The reusable WebGPU component defaults to a 96 × 52 host, while the standalone demo presents a larger 384 × 208 host with a 352 × 176 jelly canvas.
 
 ## Verify
 
