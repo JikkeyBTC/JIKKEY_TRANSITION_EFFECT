@@ -51,6 +51,12 @@ export const MATERIAL = Object.freeze({
   lightDirection: [0.19, -0.24, 0.75] as const,
 });
 
+export function diagnosticContributionLuma(
+  color: readonly [number, number, number],
+): number {
+  return color[0] * 0.2126 + color[1] * 0.7152 + color[2] * 0.0722;
+}
+
 const MAX_STEPS = MATERIAL.raySteps;
 const MAX_DIST = MATERIAL.maxDistance;
 const SURF_DIST = MATERIAL.surfaceDistance;
@@ -68,8 +74,8 @@ const SPECULAR_POWER = MATERIAL.specularPower;
 const SPECULAR_INTENSITY = MATERIAL.specularIntensity;
 
 export interface DiagnosticRenderViews {
-  readonly attachmentA: ColorAttachment['view'];
-  readonly attachmentB: ColorAttachment['view'];
+  readonly diagnosticA: ColorAttachment['view'];
+  readonly diagnosticB: ColorAttachment['view'];
 }
 
 export function createJellyShaders(
@@ -479,7 +485,30 @@ const calculateAO = (position: d.v3f, normal: d.v3f) => {
   return std.saturate(rawAO);
 };
 
-const calculateLighting = (hitPosition: d.v3f, normal: d.v3f, rayOrigin: d.v3f) => {
+const LightingSample = d.struct({
+  color: d.vec3f,
+  fakeShadow: d.vec3f,
+});
+
+const BackgroundSample = d.struct({
+  color: d.vec4f,
+  fakeShadow: d.vec3f,
+  baseColor: d.vec3f,
+  highlights: d.f32,
+});
+
+const RaySample = d.struct({
+  color: d.vec4f,
+  hit: d.f32,
+  fresnel: d.f32,
+  refractedColor: d.vec3f,
+  reflection: d.vec3f,
+  fakeShadow: d.vec3f,
+  backgroundBaseColor: d.vec3f,
+  highlights: d.f32,
+});
+
+const calculateLightingCore = (hitPosition: d.v3f, normal: d.v3f, rayOrigin: d.v3f) => {
   'use gpu';
   const lightDir = std.neg(lightUniform.$.direction);
 
@@ -498,7 +527,10 @@ const calculateLighting = (hitPosition: d.v3f, normal: d.v3f, rayOrigin: d.v3f) 
 
   const finalSpecular = specular.mul(fakeShadow);
 
-  return std.saturate(directionalLight.add(ambientLight).add(finalSpecular));
+  return LightingSample({
+    color: std.saturate(directionalLight.add(ambientLight).add(finalSpecular)),
+    fakeShadow,
+  });
 };
 
 const applyAO = (litColor: d.v3f, hitPosition: d.v3f, normal: d.v3f) => {
@@ -523,17 +555,17 @@ const rayMarchNoJelly = (rayOrigin: d.v3f, rayDirection: d.v3f) => {
   }
 
   if (distanceFromOrigin < MAX_DIST) {
-    return renderBackground(
+    return renderBackgroundCore(
       rayOrigin,
       rayDirection,
       distanceFromOrigin,
       std.select(d.f32(), 0.87, blurEnabledUniform.$ === 1),
-    ).rgb;
+    ).color.rgb;
   }
   return d.vec3f();
 };
 
-const renderBackground = (
+const renderBackgroundCore = (
   rayOrigin: d.v3f,
   rayDirection: d.v3f,
   backgroundHitDist: number,
@@ -594,15 +626,20 @@ const renderBackground = (
     .mul((1 / (sqDist * 40 + 1)) * 0.3)
     .mul(std.abs(newNormal.z));
 
-  const litColor = calculateLighting(posOffset, newNormal, rayOrigin);
-  const backgroundColor = applyAO(groundColorUniform.$.mul(litColor), posOffset, newNormal)
+  const lighting = calculateLightingCore(posOffset, newNormal, rayOrigin);
+  const backgroundColor = applyAO(groundColorUniform.$.mul(lighting.color), posOffset, newNormal)
     .add(d.vec4f(bounceLight, 0))
     .add(d.vec4f(sideBounceLight, 0));
 
-  return d.vec4f(backgroundColor.rgb.mul(1.0 + highlights), 1.0);
+  return BackgroundSample({
+    color: d.vec4f(backgroundColor.rgb.mul(1.0 + highlights), 1.0),
+    fakeShadow: lighting.fakeShadow,
+    baseColor: backgroundColor.rgb,
+    highlights,
+  });
 };
 
-const rayMarch = (rayOrigin: d.v3f, rayDirection: d.v3f, _uv: d.v2f) => {
+const rayMarchCore = (rayOrigin: d.v3f, rayDirection: d.v3f, _uv: d.v2f) => {
   'use gpu';
   let totalSteps = d.u32();
 
@@ -615,7 +652,7 @@ const rayMarch = (rayOrigin: d.v3f, rayDirection: d.v3f, _uv: d.v2f) => {
       break;
     }
   }
-  const background = renderBackground(rayOrigin, rayDirection, backgroundDist, d.f32());
+  const background = renderBackgroundCore(rayOrigin, rayDirection, backgroundDist, d.f32());
 
   const bbox = getSliderBbox();
   const zDepth = d.f32(0.25);
@@ -626,7 +663,16 @@ const rayMarch = (rayOrigin: d.v3f, rayDirection: d.v3f, _uv: d.v2f) => {
   const intersection = intersectBox(rayOrigin, rayDirection, sliderMin, sliderMax);
 
   if (!intersection.hit) {
-    return background;
+    return RaySample({
+      color: background.color,
+      hit: 0,
+      fresnel: 0,
+      refractedColor: d.vec3f(),
+      reflection: d.vec3f(),
+      fakeShadow: background.fakeShadow,
+      backgroundBaseColor: background.baseColor,
+      highlights: background.highlights,
+    });
   }
 
   let distanceFromOrigin = std.max(d.f32(0.0), intersection.tMin);
@@ -683,9 +729,18 @@ const rayMarch = (rayOrigin: d.v3f, rayDirection: d.v3f, _uv: d.v2f) => {
 
       const jelly = std.add(reflection.mul(F), refractedColor.mul(1 - F));
 
-      const finalJelly = std.mix(background.rgb, jelly, jellyColorUniform.$.w);
+      const finalJelly = std.mix(background.color.rgb, jelly, jellyColorUniform.$.w);
 
-      return d.vec4f(finalJelly, 1.0);
+      return RaySample({
+        color: d.vec4f(finalJelly, 1.0),
+        hit: 1,
+        fresnel: F,
+        refractedColor,
+        reflection,
+        fakeShadow: background.fakeShadow,
+        backgroundBaseColor: background.baseColor,
+        highlights: background.highlights,
+      });
     }
 
     if (distanceFromOrigin > backgroundDist) {
@@ -693,7 +748,16 @@ const rayMarch = (rayOrigin: d.v3f, rayDirection: d.v3f, _uv: d.v2f) => {
     }
   }
 
-  return background;
+  return RaySample({
+    color: background.color,
+    hit: 0,
+    fresnel: 0,
+    refractedColor: d.vec3f(),
+    reflection: d.vec3f(),
+    fakeShadow: background.fakeShadow,
+    backgroundBaseColor: background.baseColor,
+    highlights: background.highlights,
+  });
 };
 
 const raymarchFn = tgpu.fragmentFn({
@@ -705,8 +769,8 @@ const raymarchFn = tgpu.fragmentFn({
   const ndc = d.vec2f(uv.x * 2 - 1, -(uv.y * 2 - 1));
   const ray = getRay(ndc);
 
-  const color = rayMarch(ray.origin, ray.direction, uv);
-  return d.vec4f(std.tanh(color.rgb.mul(1.3)), 1);
+  const sample = rayMarchCore(ray.origin, ray.direction, uv);
+  return d.vec4f(std.tanh(sample.color.rgb.mul(1.3)), 1);
 });
 
 const fragmentMain = tgpu.fragmentFn({
@@ -716,23 +780,36 @@ const fragmentMain = tgpu.fragmentFn({
   return std.textureSample(sampleLayout.$.currentTexture, filteringSampler.$, input.uv);
 });
 
+  const rec709Luma = (color: d.v3f) => {
+    'use gpu';
+    return std.dot(color, d.vec3f(0.2126, 0.7152, 0.0722));
+  };
 
   const diagnosticRaymarchFn = tgpu.fragmentFn({
     in: { uv: d.vec2f },
     out: {
       color: d.vec4f,
-      attachmentA: d.vec4f,
-      attachmentB: d.vec4f,
+      diagnosticA: d.vec4f,
+      diagnosticB: d.vec4f,
     },
   })(({ uv }) => {
     randf.seed2(randomUniform.$.mul(uv));
     const ndc = d.vec2f(uv.x * 2 - 1, -(uv.y * 2 - 1));
     const ray = getRay(ndc);
-    const color = rayMarch(ray.origin, ray.direction, uv);
+    const sample = rayMarchCore(ray.origin, ray.direction, uv);
+    const transmission = sample.refractedColor.mul(1 - sample.fresnel);
+    const reflectionContribution = sample.reflection.mul(sample.fresnel);
+    const shadowAttenuation = std.saturate(1 - rec709Luma(sample.fakeShadow));
+    const caustic = sample.backgroundBaseColor.mul(sample.highlights);
     return {
-      color: d.vec4f(std.tanh(color.rgb.mul(1.3)), 1),
-      attachmentA: d.vec4f(0),
-      attachmentB: d.vec4f(0),
+      color: d.vec4f(std.tanh(sample.color.rgb.mul(1.3)), 1),
+      diagnosticA: d.vec4f(
+        sample.hit,
+        sample.fresnel,
+        rec709Luma(transmission),
+        rec709Luma(reflectionContribution),
+      ),
+      diagnosticB: d.vec4f(shadowAttenuation, rec709Luma(caustic), 0, 0),
     };
   });
 
@@ -743,22 +820,25 @@ const fragmentMain = tgpu.fragmentFn({
         targets: { format: 'rgba8unorm' },
       })
     : undefined;
+  if (productionRayMarchPipeline) accounting.pipelineCreated?.();
   const diagnosticRayMarchPipeline = mode === 'diagnostic'
     ? root.createRenderPipeline({
         vertex: common.fullScreenTriangle,
         fragment: diagnosticRaymarchFn,
         targets: {
           color: { format: 'rgba8unorm' },
-          attachmentA: { format: 'rgba16float' },
-          attachmentB: { format: 'rgba16float' },
+          diagnosticA: { format: 'rgba16float' },
+          diagnosticB: { format: 'rgba16float' },
         },
       })
     : undefined;
+  if (diagnosticRayMarchPipeline) accounting.pipelineCreated?.();
   const presentationPipeline = root.createRenderPipeline({
     vertex: common.fullScreenTriangle,
     fragment: fragmentMain,
     targets: { format: presentationFormat },
   });
+  accounting.pipelineCreated?.();
 
   let destroyed = false;
   const shaders = {
@@ -771,13 +851,13 @@ const fragmentMain = tgpu.fragmentFn({
         diagnosticRayMarchPipeline
           .withColorAttachment({
             color: { view: colorView, loadOp: 'clear', storeOp: 'store' },
-            attachmentA: {
-              view: diagnostics.attachmentA,
+            diagnosticA: {
+              view: diagnostics.diagnosticA,
               loadOp: 'clear',
               storeOp: 'store',
             },
-            attachmentB: {
-              view: diagnostics.attachmentB,
+            diagnosticB: {
+              view: diagnostics.diagnosticB,
               loadOp: 'clear',
               storeOp: 'store',
             },
@@ -803,11 +883,8 @@ const fragmentMain = tgpu.fragmentFn({
       accounting.submission();
     },
 
-    setRandomSeed(index: number): void {
-      const seed = Math.max(0, Math.floor(index)) + 1;
-      const x = ((seed * 0.7548776662466927) % 1) * 2 - 1;
-      const y = ((seed * 0.5698402909980532) % 1) * 2 - 1;
-      randomUniform.write(d.vec2f(x, y));
+    setRandomSeed(first: number, second: number): void {
+      randomUniform.write(d.vec2f((first - 0.5) * 2, (second - 0.5) * 2));
     },
 
     destroy(): void {

@@ -56,7 +56,7 @@ export function createTaaState(): TaaState {
 
 export type TaaResourceAccounting = Pick<
   RendererResourceAccounting,
-  'submission' | 'textureCreated' | 'textureDestroyed'
+  'submission' | 'pipelineCreated' | 'textureCreated' | 'textureDestroyed'
 >;
 
 export const taaResolveFn = tgpu.computeFn({
@@ -141,6 +141,7 @@ export class TaaResolver {
     this.#height = height;
     this.#accounting = accounting;
     this.#pipeline = root.createComputePipeline({ compute: taaResolveFn });
+    accounting.pipelineCreated?.();
     this.#textures = createTaaTextures(root, width, height, accounting);
   }
 

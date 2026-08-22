@@ -7,8 +7,23 @@ import {
   createJellyRenderer,
   JellyRendererError,
 } from '../../src/jelly-toggle-3d/renderer';
+import { diagnosticContributionLuma } from '../../src/jelly-toggle-3d/shaders';
 
 type TextureSize = Readonly<{ width: number; height: number; depthOrArrayLayers: number }>;
+
+function deferred<T = void>(): {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+  readonly reject: (reason: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 class FakeBuffer {
   readonly bytes: Uint8Array;
@@ -20,6 +35,7 @@ class FakeBuffer {
   constructor(
     readonly descriptor: GPUBufferDescriptor,
     private readonly onDestroy: () => void,
+    private readonly onMapAsync: (buffer: FakeBuffer) => Promise<void>,
   ) {
     this.bytes = new Uint8Array(Number(descriptor.size));
   }
@@ -32,6 +48,7 @@ class FakeBuffer {
   }
 
   async mapAsync(): Promise<void> {
+    await this.onMapAsync(this);
     this.mapState = 'mapped';
   }
 
@@ -47,6 +64,7 @@ class FakeBuffer {
 class FakeTexture {
   destroyed = false;
   destroyCalls = 0;
+  readbackHalfBits = 0;
   readonly size: TextureSize;
 
   constructor(
@@ -84,6 +102,7 @@ interface FakeGpuHarness {
   readonly context: GPUCanvasContext;
   readonly buffers: FakeBuffer[];
   readonly textures: FakeTexture[];
+  readonly shaderCodes: string[];
   readonly poseWriteSizes: number[];
   readonly pipelineCount: number;
   readonly submissions: number;
@@ -95,6 +114,7 @@ interface FakeGpuHarness {
   failBufferCreationIn: number | undefined;
   bufferCreationFailure: Error | undefined;
   failTextureCreationIn: number | undefined;
+  mapAsyncImpl: (buffer: FakeBuffer) => Promise<void>;
   emitUncaptured(error: Error): void;
 }
 
@@ -109,6 +129,7 @@ function createFakeGpu(): FakeGpuHarness {
   const buffers: FakeBuffer[] = [];
   const textures: FakeTexture[] = [];
   const poseWriteSizes: number[] = [];
+  const shaderCodes: string[] = [];
   const listeners = new Set<(event: GPUUncapturedErrorEvent) => void>();
   let pipelineCount = 0;
   let submissions = 0;
@@ -117,6 +138,7 @@ function createFakeGpu(): FakeGpuHarness {
   let destroyedTextures = 0;
   let deviceDestroyCount = 0;
   let contextUnconfigureCount = 0;
+  let diagnosticTextureIndex = 0;
 
   const pass = {
     setPipeline: () => undefined,
@@ -181,7 +203,11 @@ function createFakeGpu(): FakeGpuHarness {
         }
         harness.failBufferCreationIn -= 1;
       }
-      const buffer = new FakeBuffer(descriptor, () => { destroyedBuffers += 1; });
+      const buffer = new FakeBuffer(
+        descriptor,
+        () => { destroyedBuffers += 1; },
+        (candidate) => harness.mapAsyncImpl(candidate),
+      );
       buffers.push(buffer);
       return buffer;
     },
@@ -194,11 +220,20 @@ function createFakeGpu(): FakeGpuHarness {
         harness.failTextureCreationIn -= 1;
       }
       const texture = new FakeTexture(descriptor, () => { destroyedTextures += 1; });
+      if (
+        descriptor.format === 'rgba16float'
+        && !(texture.size.width === 256 && texture.size.height === 128)
+      ) {
+        texture.readbackHalfBits = diagnosticTextureIndex++ % 2 === 0 ? 0x3c00 : 0x4000;
+      }
       textures.push(texture);
       return texture;
     },
     createSampler: () => ({}),
-    createShaderModule: () => ({ getCompilationInfo: async () => ({ messages: [] }) }),
+    createShaderModule: (descriptor: GPUShaderModuleDescriptor) => {
+      shaderCodes.push(String(descriptor.code));
+      return { getCompilationInfo: async () => ({ messages: [] }) };
+    },
     createBindGroupLayout: () => ({}),
     createPipelineLayout: () => ({}),
     createBindGroup: () => ({}),
@@ -224,7 +259,29 @@ function createFakeGpu(): FakeGpuHarness {
       clearBuffer: () => undefined,
       copyBufferToBuffer: () => undefined,
       copyBufferToTexture: () => undefined,
-      copyTextureToBuffer: () => undefined,
+      copyTextureToBuffer: (
+        source: GPUTexelCopyTextureInfo,
+        destination: GPUTexelCopyBufferInfo,
+        copySize: GPUExtent3D,
+      ) => {
+        const texture = source.texture as unknown as FakeTexture;
+        const buffer = destination.buffer as unknown as FakeBuffer;
+        const extent = Symbol.iterator in Object(copySize)
+          ? [...copySize as Iterable<number>]
+          : [
+              (copySize as GPUExtent3DDict).width,
+              (copySize as GPUExtent3DDict).height ?? 1,
+            ];
+        const width = Number(extent[0]);
+        const height = Number(extent[1]);
+        const bytesPerRow = Number(destination.bytesPerRow);
+        const data = new DataView(buffer.bytes.buffer);
+        for (let y = 0; y < height; y += 1) {
+          for (let component = 0; component < width * 4; component += 1) {
+            data.setUint16(y * bytesPerRow + component * 2, texture.readbackHalfBits, true);
+          }
+        }
+      },
       copyTextureToTexture: () => undefined,
       finish: () => ({}),
     }),
@@ -251,6 +308,7 @@ function createFakeGpu(): FakeGpuHarness {
     context,
     buffers,
     textures,
+    shaderCodes,
     poseWriteSizes,
     get pipelineCount() { return pipelineCount; },
     get submissions() { return submissions; },
@@ -262,6 +320,7 @@ function createFakeGpu(): FakeGpuHarness {
     failBufferCreationIn: undefined,
     bufferCreationFailure: undefined,
     failTextureCreationIn: undefined,
+    mapAsyncImpl: async () => undefined,
     emitUncaptured(error: Error) {
       const event = { type: 'uncapturederror', error } as unknown as GPUUncapturedErrorEvent;
       for (const listener of listeners) listener(event);
@@ -319,6 +378,104 @@ afterEach(() => {
 });
 
 describe('jelly toggle WebGPU renderer resource contract', () => {
+  it('consumes exactly two injected random samples for every upstream scene draw', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+    const random = vi.fn()
+      .mockReturnValueOnce(0.25)
+      .mockReturnValueOnce(0.75)
+      .mockReturnValueOnce(0.125)
+      .mockReturnValueOnce(0.875);
+
+    const renderer = await createJellyRenderer(canvas, 'production', random);
+    expect(random).toHaveBeenCalledTimes(2);
+    renderer.draw({ jitterIndex: 1, historyValid: true });
+    expect(random).toHaveBeenCalledTimes(4);
+    renderer.destroy();
+  });
+
+  it('uses Math.random as the ordinary production distribution source', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+
+    const renderer = await createJellyRenderer(canvas);
+    expect(random).toHaveBeenCalledTimes(2);
+    renderer.draw({ jitterIndex: 1, historyValid: true });
+    expect(random).toHaveBeenCalledTimes(4);
+    renderer.destroy();
+  });
+
+  it('emits named nonzero diagnostic fields through the compiled MRT pipeline', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+
+    const renderer = await createJellyRenderer(canvas, 'diagnostic');
+    const diagnosticShader = fake.shaderCodes.find((code) => (
+      code.includes('@location(1)') && code.includes('@location(2)')
+    ));
+    expect(diagnosticShader).toContain('diagnosticA');
+    expect(diagnosticShader).toContain('diagnosticB');
+    expect(diagnosticShader).not.toMatch(/diagnosticA\s*=\s*vec4f\(0(?:\.0)?\)/);
+    expect(diagnosticShader).not.toMatch(/diagnosticB\s*=\s*vec4f\(0(?:\.0)?\)/);
+    expect(diagnosticShader).not.toMatch(/saturate\(rec709Luma\((?:transmission|reflectionContribution|caustic)\)\)/);
+
+    renderer.destroy();
+  });
+
+  it('preserves HDR diagnostic contribution luma above one', () => {
+    expect(diagnosticContributionLuma([2, 2, 2])).toBeCloseTo(2, 10);
+    expect(diagnosticContributionLuma([4, 0, 0])).toBeCloseTo(0.8504, 10);
+  });
+
+  it('keeps the production raymarch artifact free of diagnostic-only work', async () => {
+    const productionSource = readFileSync('src/jelly-toggle-3d/shaders.ts', 'utf8');
+    expect(productionSource).not.toMatch(
+      /calculateLightingDiagnostic|renderBackgroundDiagnostic|rayMarchDiagnostic/,
+    );
+    expect(productionSource.match(/const calculateLightingCore\s*=/g)).toHaveLength(1);
+    expect(productionSource.match(/const renderBackgroundCore\s*=/g)).toHaveLength(1);
+    expect(productionSource.match(/const rayMarchCore\s*=/g)).toHaveLength(1);
+    expect(productionSource.match(/rayMarchCore\(ray\.origin, ray\.direction, uv\)/g)).toHaveLength(2);
+    expect(productionSource.match(/randf\.sample\(\)/g)).toHaveLength(1);
+
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+
+    const renderer = await createJellyRenderer(canvas, 'production');
+    const productionShader = fake.shaderCodes.find((code) => code.includes('fn rayMarchCore('));
+    expect(productionShader).toBeDefined();
+    expect(productionShader).not.toMatch(/diagnostic|rec709Luma|shadowAttenuation|causticLuma/);
+    expect(productionShader!.match(/\n  randSeed2\(/g)).toHaveLength(1);
+    const orderedTokens = [
+      'fn rayMarchCore(',
+      'var background = renderBackgroundCore(',
+      'var jelly = ((reflection * F) + (refractedColor * (1f - F)))',
+      'var finalJelly = mix(background.color.rgb, jelly, jellyColorUniform.w)',
+      'var sample_1 = rayMarchCore(ray.origin, ray.direction, _arg_0.uv)',
+      'return vec4f(tanh((sample_1.color.rgb * 1.3f)), 1f)',
+    ];
+    let previous = -1;
+    for (const token of orderedTokens) {
+      const next = productionShader!.indexOf(token);
+      expect(next, `missing or reordered production token: ${token}`).toBeGreaterThan(previous);
+      previous = next;
+    }
+    renderer.destroy();
+  });
+
   it('retains immutable resources while replacing bounded size-dependent textures', async () => {
     const fake = createFakeGpu();
     const canvas = document.createElement('canvas');
@@ -336,6 +493,7 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
     );
 
     expect(pipelineGenerationSize).toBeGreaterThan(0);
+    expect(renderer.stats.pipelinesCreated).toBe(pipelineGenerationSize);
     expect(sdfTexture).toBeDefined();
     expect(fake.configuredFormat).toBe('bgra8unorm');
     expect(renderer.stats.buffersCreated).toBe(fake.buffers.length);
@@ -358,6 +516,7 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
     expect(renderer.resize(96, 52, 2)).toBe(false);
     expect(renderer.stats.texturesCreated).toBe(texturesAfterResize);
     expect(fake.pipelineCount).toBe(pipelineGenerationSize);
+    expect(renderer.stats.pipelinesCreated).toBe(pipelineGenerationSize);
     expect(fake.buffers.length).toBe(immutableBufferCount);
 
     expect(renderer.resize(200, 100, 4)).toBe(true);
@@ -367,9 +526,17 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
     fake.emitUncaptured(new Error('synthetic validation error'));
     expect(renderer.stats.uncapturedErrors).toBe(1);
 
-    await expect(renderer.readDiagnostics()).rejects.toThrow(
-      'Diagnostic field readback is not implemented until Task 5',
-    );
+    const buffersBeforeReadback = renderer.stats.buffersCreated;
+    const buffersDestroyedBeforeReadback = renderer.stats.buffersDestroyed;
+    const readback = await renderer.readDiagnostics();
+    expect(readback).toMatchObject({ width: 264, height: 132 });
+    expect(readback.attachmentA).toHaveLength(264 * 132 * 4);
+    expect(readback.attachmentA[0]).toBe(1);
+    expect(readback.attachmentA.at(-1)).toBe(1);
+    expect(readback.attachmentB[0]).toBe(2);
+    expect(readback.attachmentB.at(-1)).toBe(2);
+    expect(renderer.stats.buffersCreated - buffersBeforeReadback).toBe(2);
+    expect(renderer.stats.buffersDestroyed - buffersDestroyedBeforeReadback).toBe(2);
 
     renderer.destroy();
     const afterFirstDestroy = { ...renderer.stats };
@@ -380,6 +547,92 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
     expect(renderer.stats.texturesDestroyed).toBe(renderer.stats.texturesCreated);
     expect(fake.buffers.every((buffer) => buffer.destroyed)).toBe(true);
     expect(fake.textures.every((texture) => texture.destroyed)).toBe(true);
+  });
+
+  it('rejects overlapping diagnostic readbacks and releases staging buffers', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    installGpu(canvas, fake);
+    const renderer = await createJellyRenderer(canvas, 'diagnostic');
+    const activeBuffersBefore = renderer.stats.buffersCreated - renderer.stats.buffersDestroyed;
+
+    const first = renderer.readDiagnostics();
+    await expect(renderer.readDiagnostics()).rejects.toThrow(/already in flight/i);
+    await expect(first).resolves.toMatchObject({ width: 264, height: 132 });
+    expect(renderer.stats.buffersCreated - renderer.stats.buffersDestroyed).toBe(activeBuffersBefore);
+
+    renderer.destroy();
+  });
+
+  it('rejects a pending diagnostic readback after resize and releases both staging buffers', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+    const renderer = await createJellyRenderer(canvas, 'diagnostic');
+    const gates = [deferred(), deferred()];
+    let mapCalls = 0;
+    fake.mapAsyncImpl = () => gates[mapCalls++]!.promise;
+
+    const pending = renderer.readDiagnostics();
+    expect(mapCalls).toBe(2);
+    const staging = fake.buffers.slice(-2);
+    expect(renderer.resize(96, 52, 2)).toBe(true);
+    gates.forEach((gate) => gate.resolve());
+
+    await expect(pending).rejects.toBeInstanceOf(JellyRendererError);
+    expect(staging.map((buffer) => buffer.destroyCalls)).toEqual([1, 1]);
+    expect(staging.every((buffer) => buffer.destroyed)).toBe(true);
+
+    renderer.destroy();
+    expect(renderer.stats.buffersDestroyed).toBe(renderer.stats.buffersCreated);
+  });
+
+  it('destroys pending readback staging buffers exactly once during renderer teardown', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+    const renderer = await createJellyRenderer(canvas, 'diagnostic');
+    const gates = [deferred(), deferred()];
+    let mapCalls = 0;
+    fake.mapAsyncImpl = () => gates[mapCalls++]!.promise;
+
+    const pending = renderer.readDiagnostics();
+    expect(mapCalls).toBe(2);
+    const staging = fake.buffers.slice(-2);
+    renderer.destroy();
+    expect(staging.map((buffer) => buffer.destroyCalls)).toEqual([1, 1]);
+    gates.forEach((gate) => gate.resolve());
+
+    await expect(pending).rejects.toBeInstanceOf(JellyRendererError);
+    expect(staging.map((buffer) => buffer.destroyCalls)).toEqual([1, 1]);
+    expect(renderer.stats.buffersDestroyed).toBe(renderer.stats.buffersCreated);
+  });
+
+  it('cleans up both staging buffers when mapping rejects', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+    const renderer = await createJellyRenderer(canvas, 'diagnostic');
+    const activeBuffersBefore = renderer.stats.buffersCreated - renderer.stats.buffersDestroyed;
+    fake.mapAsyncImpl = async () => {
+      throw new Error('synthetic map rejection');
+    };
+
+    await expect(renderer.readDiagnostics()).rejects.toMatchObject({
+      name: 'JellyRendererError',
+      stage: 'readback',
+    });
+    const staging = fake.buffers.slice(-2);
+    expect(staging.map((buffer) => buffer.destroyCalls)).toEqual([1, 1]);
+    expect(renderer.stats.buffersCreated - renderer.stats.buffersDestroyed).toBe(activeBuffersBefore);
+
+    renderer.destroy();
   });
 
   it('surfaces upload failures as typed renderer errors', async () => {

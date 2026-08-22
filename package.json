@@ -17,10 +17,15 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test tests/e2e/electron.spec.ts tests/e2e/visual.spec.ts",
+    "test:e2e": "playwright test tests/e2e/electron.spec.ts tests/e2e/visual.spec.ts tests/e2e/jelly-toggle.spec.ts tests/e2e/jelly-toggle-renderer.spec.ts tests/e2e/jelly-toggle-resources.spec.ts tests/e2e/burn-isolation.spec.ts",
+    "test:jelly:visual": "pnpm build && playwright test tests/e2e/jelly-toggle-visual.spec.ts --reporter=list",
+    "capture:jelly": "pnpm build && node scripts/generate-jelly-fixtures.cjs",
+    "verify:burn-isolation:built": "node scripts/verify-burn-isolation.cjs",
+    "verify:burn-isolation": "pnpm build && pnpm verify:burn-isolation:built",
+    "benchmark:jelly": "pnpm build && playwright test tests/e2e/jelly-toggle-performance.spec.ts --reporter=list",
     "benchmark": "pnpm build && playwright test tests/e2e/performance.spec.ts --reporter=list",
     "capture:reference": "pnpm build:electron && electron scripts/capture-reference.cjs",
-    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm test:e2e"
+    "verify": "pnpm typecheck && pnpm test && pnpm build && pnpm verify:burn-isolation:built && pnpm test:e2e"
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",

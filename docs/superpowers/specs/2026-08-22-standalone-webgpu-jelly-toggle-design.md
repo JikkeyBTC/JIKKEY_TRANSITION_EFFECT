@@ -369,10 +369,12 @@ mask는 최종 sRGB 이미지에서 휴리스틱하게 분류하지 않는다. �
 | A.B | transmitted/refraction luminance | silhouette 중 `>= 0.02` interior |
 | A.A | specular contribution luminance | `>= 0.05` highlight |
 | B.R | ground shadow attenuation | `>= 0.02` shadow |
-| B.G | caustic additive luminance | `>= 0.02` caustic |
+| B.G | caustic additive luminance | `>= 0.001` caustic |
 | B.BA | reserved, 항상 `0` | 값이 0인지 검증 |
 
 diagnostic pass는 production color attachment와 같은 draw에서 같은 수식을 사용하고 blending 없이 저장한다. fixture는 composite PNG와 두 attachment의 raw float data 및 mask threshold version `1`을 함께 보존한다. 따라서 IoU와 centroid는 고정된 source field에서 재현 가능하며 test 전용 색상 segmentation에 의존하지 않는다.
+
+caustic threshold는 고정 authoring 환경에서 캘리브레이션한다. canonical ON의 실제 additive caustic은 최대 `0.0014067`이고 `0.001` 이상인 physical pixel이 33개인 반면 `0.005` 이상은 0개였다. 따라서 threshold version 1은 전 state에 `Math.fround(0.001)`을 적용해 ON 회귀 mask를 보존한다. raw `B.G` 값이나 production shading은 변경하지 않는다.
 
 중간 golden의 capture time은 임의 wall clock wait로 정하지 않는다. fixed-step offline physics에서 OFF canonical pose부터 ON target을 향해 진행하며 각 tick의 point `maxY - minY`를 측정한다. 첫 arch peak를 `extent[n-1] < extent[n] && extent[n] >= extent[n+1]`로 선택하고, 동률이면 더 이른 tick을 택한다. 선택된 tick, seed, TAA sample count, renderer/GPU 환경과 upstream revision을 fixture metadata에 기록해 실제 Electron manual clock을 같은 tick으로 구동한다. local maximum이 2초 안에 없으면 fixture 생성을 실패시킨다.
 

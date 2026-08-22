@@ -32,6 +32,12 @@ describe('Electron renderer routing', () => {
       '--hide-webgpu',
       '--defer-webgpu',
     ])).toEqual({ test: '1', gpu: 'hidden', init: 'manual' });
+    expect(rendererQuery('jelly', [
+      '--jelly-toggle',
+      '--test-mode',
+      '--diagnostic-webgpu',
+      '--fixture-capture',
+    ])).toEqual({ test: '1', diagnostic: '1', fixture: '1' });
     expect(rendererQuery('burn', [
       '--test-mode',
       '--hide-webgpu',

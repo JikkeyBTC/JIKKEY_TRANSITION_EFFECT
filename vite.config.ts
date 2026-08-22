@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import { moduleProvenancePlugin } from './build/module-provenance-plugin';
 
 export default defineConfig(async () => {
   const { default: typegpuPlugin } = await import('unplugin-typegpu/vite');
@@ -11,7 +12,10 @@ export default defineConfig(async () => {
     html: {
       cspNonce: 'jelly-toggle-vite',
     },
-    plugins: [typegpuPlugin({ include: /src[\\/]jelly-toggle-3d[\\/].*\.ts$/ })],
+    plugins: [
+      typegpuPlugin({ include: /src[\\/]jelly-toggle-3d[\\/].*\.ts$/ }),
+      moduleProvenancePlugin(),
+    ],
     build: {
       outDir: 'dist-renderer',
       emptyOutDir: true,

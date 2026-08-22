@@ -36,6 +36,13 @@ export interface JellyToggleRuntime {
   observeResolutionChanges(callback: () => void, signal: AbortSignal): void;
   devicePixelRatio(): number;
   reportError(error: unknown): void;
+  /** Optional test-runtime accounting; omitted by the ordinary production runtime. */
+  lifecycle?: Readonly<{
+    mount(delta: 1 | -1): void;
+    listener(delta: number): void;
+    resizeObserver(delta: 1 | -1): void;
+    animationFrame(delta: 1 | -1): void;
+  }>;
 }
 
 type RenderMode = 'initializing' | 'webgpu' | 'fallback' | 'destroyed';
@@ -76,6 +83,18 @@ export function createJellyToggle3DWithRuntime(
   runtime: JellyToggleRuntime,
 ): JellyToggle3D {
   const { element } = options;
+  const accountLifecycle = <Key extends keyof NonNullable<JellyToggleRuntime['lifecycle']>>(
+    key: Key,
+    delta: Parameters<NonNullable<JellyToggleRuntime['lifecycle']>[Key]>[0],
+  ): void => {
+    try {
+      const callback = runtime.lifecycle?.[key] as ((value: typeof delta) => void) | undefined;
+      callback?.(delta);
+    } catch {
+      // Test telemetry must never affect component ownership.
+    }
+  };
+  accountLifecycle('mount', 1);
   let semanticChecked = options.checked ?? element.getAttribute('aria-checked') === 'true';
   let semanticRevision = 0;
   let mode: RenderMode = 'initializing';
@@ -86,6 +105,7 @@ export function createJellyToggle3DWithRuntime(
   let physics = runtime.createPhysics(targetFor(semanticChecked));
   let taa = runtime.createTaa();
   let rafId: number | null = null;
+  let rafAccounted = false;
   let lastFrameTime: number | null = null;
   let jitterIndex = 0;
   let pendingAttempt: Promise<JellyToggleReadyState> | null = null;
@@ -152,6 +172,10 @@ export function createJellyToggle3DWithRuntime(
     const ownedId = rafId;
     rafId = null;
     lastFrameTime = null;
+    if (rafAccounted) {
+      rafAccounted = false;
+      accountLifecycle('animationFrame', -1);
+    }
     safely(() => runtime.cancelAnimationFrame(ownedId));
   };
 
@@ -193,16 +217,26 @@ export function createJellyToggle3DWithRuntime(
     const device = deviceGeneration;
     let callbackRanSynchronously = false;
     rafId = -1;
+    rafAccounted = true;
+    accountLifecycle('animationFrame', 1);
     try {
       const nextId = runtime.requestAnimationFrame((timestamp) => {
         callbackRanSynchronously = true;
         rafId = null;
+        if (rafAccounted) {
+          rafAccounted = false;
+          accountLifecycle('animationFrame', -1);
+        }
         if (destroyed || lifecycle !== lifecycleGeneration || device !== deviceGeneration) return;
         runFrame(timestamp, lifecycle, device);
       });
       if (!callbackRanSynchronously) rafId = nextId;
     } catch (error) {
       rafId = null;
+      if (rafAccounted) {
+        rafAccounted = false;
+        accountLifecycle('animationFrame', -1);
+      }
       report(error);
     }
   };
@@ -357,6 +391,7 @@ export function createJellyToggle3DWithRuntime(
     uploadCanonical();
   };
 
+  accountLifecycle('listener', 3);
   element.addEventListener('click', onClick, { signal: abortController.signal });
   reducedQuery.addEventListener('change', onReducedMotion as EventListener, {
     signal: abortController.signal,
@@ -479,6 +514,7 @@ export function createJellyToggle3DWithRuntime(
   };
 
   const resizeObserver = runtime.createResizeObserver(() => handleGeometryChange());
+  accountLifecycle('resizeObserver', 1);
   try {
     resizeObserver.observe(canvas, { box: 'device-pixel-content-box' });
   } catch {
@@ -509,8 +545,10 @@ export function createJellyToggle3DWithRuntime(
       safely(() => reducedQuery.removeEventListener('change', onReducedMotion as EventListener));
       safely(() => forcedQuery.removeEventListener('change', onForcedColors as EventListener));
       abortController.abort();
+      accountLifecycle('listener', -3);
       cancelFrame();
       safely(() => resizeObserver.disconnect());
+      accountLifecycle('resizeObserver', -1);
       const ownedRenderer = renderer;
       renderer = null;
       if (ownedRenderer) safely(() => ownedRenderer.destroy());
@@ -518,6 +556,7 @@ export function createJellyToggle3DWithRuntime(
       fallback.remove();
       showCurrentMode();
       settleReady('destroyed');
+      accountLifecycle('mount', -1);
     },
   };
 

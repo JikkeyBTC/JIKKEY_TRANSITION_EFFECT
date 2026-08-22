@@ -178,6 +178,7 @@ export class SliderGpu {
         d.vec4f(minDist, overallProgress, normalX, normalY),
       );
     });
+    accounting.pipelineCreated?.();
     accounting.bufferCreated();
     constructionCleanups.push(() => {
       this.#computeBezierPipeline.sizeUniform.buffer.destroy();

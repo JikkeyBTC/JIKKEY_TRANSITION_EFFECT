@@ -4,6 +4,10 @@ import { pathToFileURL } from 'node:url';
 import { CAPTURE_VIEWPORT_CHANNEL } from './capture-types';
 import { createCaptureViewportHandler } from './capture-handler';
 import {
+  bootstrapAndAttachWebGpuTestProbe,
+  type WebGpuTestProbe,
+} from './webgpu-test-probe';
+import {
   blockUnexpectedNavigation,
   rendererHtml,
   rendererDevPath,
@@ -16,8 +20,16 @@ import {
 const trustedWebContentsIds = new Set<number>();
 const selectedRenderer = rendererKind(process.argv);
 const selectedDevUrl = requestedDevServerUrl(process.argv);
+const enableWebGpuProbe = process.argv.includes('--test-mode')
+  && process.argv.includes('--webgpu-probe');
+const enableFixtureCapture = selectedRenderer === 'jelly'
+  && process.argv.includes('--test-mode')
+  && process.argv.includes('--fixture-capture');
+const activeWebGpuProbes = new Map<number, WebGpuTestProbe>();
 
-function createWindow(kind: RendererKind): BrowserWindow {
+if (enableFixtureCapture) app.commandLine.appendSwitch('force-device-scale-factor', '2');
+
+async function createWindow(kind: RendererKind): Promise<BrowserWindow> {
   const html = rendererHtml(kind);
   const query = rendererQuery(kind, process.argv);
   const packagedPath = path.join(__dirname, '..', 'dist-renderer', html);
@@ -27,11 +39,12 @@ function createWindow(kind: RendererKind): BrowserWindow {
   for (const [key, value] of Object.entries(query)) expectedUrl.searchParams.set(key, value);
 
   const window = new BrowserWindow({
-    width: 1_280,
-    height: 720,
+    width: enableFixtureCapture ? 800 : 1_280,
+    height: enableFixtureCapture ? 600 : 720,
     minWidth: 800,
     minHeight: 560,
     useContentSize: true,
+    resizable: !enableFixtureCapture,
     show: false,
     backgroundColor: '#0c0c0c',
     webPreferences: {
@@ -42,6 +55,16 @@ function createWindow(kind: RendererKind): BrowserWindow {
       webgl: true,
     },
   });
+
+  let probe: WebGpuTestProbe | undefined;
+  if (enableWebGpuProbe) {
+    try {
+      probe = await bootstrapAndAttachWebGpuTestProbe(window.webContents);
+    } catch (error) {
+      window.destroy();
+      throw error;
+    }
+  }
 
   if (kind === 'burn') {
     const trustedId = window.webContents.id;
@@ -58,6 +81,14 @@ function createWindow(kind: RendererKind): BrowserWindow {
     blockUnexpectedNavigation(event, expectedUrl.href);
   });
   window.once('ready-to-show', () => window.show());
+
+  if (probe) {
+    activeWebGpuProbes.set(window.webContents.id, probe);
+    window.webContents.once('destroyed', () => {
+      activeWebGpuProbes.get(window.webContents.id)?.detach();
+      activeWebGpuProbes.delete(window.webContents.id);
+    });
+  }
 
   const load = window.loadURL(expectedUrl.href);
   void load.catch((error: unknown) => {
@@ -79,9 +110,9 @@ ipcMain.handle(
 );
 
 void app.whenReady().then(() => {
-  createWindow(selectedRenderer);
+  void createWindow(selectedRenderer);
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow(selectedRenderer);
+    if (BrowserWindow.getAllWindows().length === 0) void createWindow(selectedRenderer);
   });
 });
 

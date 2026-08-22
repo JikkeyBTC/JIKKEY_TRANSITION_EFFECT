@@ -39,6 +39,8 @@ export function rendererQuery(
     test: '1',
     ...(argv.includes('--hide-webgpu') ? { gpu: 'hidden' } : {}),
     ...(argv.includes('--defer-webgpu') ? { init: 'manual' } : {}),
+    ...(argv.includes('--diagnostic-webgpu') ? { diagnostic: '1' } : {}),
+    ...(argv.includes('--fixture-capture') ? { fixture: '1' } : {}),
   };
 }
 

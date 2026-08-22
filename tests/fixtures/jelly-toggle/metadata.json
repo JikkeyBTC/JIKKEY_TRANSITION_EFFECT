@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "thresholdVersion": 1,
+  "environment": {
+    "platform": "win32",
+    "arch": "x64",
+    "electron": "43.4.0",
+    "chromium": "150.0.7871.224",
+    "angleBackend": "D3D11",
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "colorSpace": "sRGB",
+    "viewport": {
+      "width": 800,
+      "height": 600
+    },
+    "devicePixelRatio": 2,
+    "backing": {
+      "width": 176,
+      "height": 88
+    }
+  },
+  "upstreamRevision": "d4433e329697c4341a9f915f75dbd9608f3939fa",
+  "seed": "0x4A454C4C",
+  "prng": {
+    "algorithm": "xorshift32",
+    "version": 1
+  },
+  "taaSamples": 16,
+  "diagnosticJitterIndex": 15,
+  "rawAttachments": {
+    "format": "rgba16float",
+    "componentType": "IEEE-754 binary16",
+    "byteOrder": "little-endian",
+    "packing": "tightly-packed RGBA with no row padding"
+  },
+  "frames": {
+    "off": {
+      "tick": 0,
+      "width": 176,
+      "height": 88,
+      "diagnosticJitterIndex": 15
+    },
+    "arch": {
+      "tick": 10,
+      "width": 176,
+      "height": 88,
+      "diagnosticJitterIndex": 15
+    },
+    "on": {
+      "tick": 0,
+      "width": 176,
+      "height": 88,
+      "diagnosticJitterIndex": 15
+    }
+  }
+}

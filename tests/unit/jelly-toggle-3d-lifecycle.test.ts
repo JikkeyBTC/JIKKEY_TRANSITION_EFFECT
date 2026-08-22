@@ -5,6 +5,10 @@ import {
   type JellyToggle3D,
   type JellyToggleRuntime,
 } from '../../src/jelly-toggle-3d/JellyToggle3D';
+import {
+  selectJellyFixturePose,
+  verifyAndFreezeJellyFixturePose,
+} from '../../src/jelly-toggle-3d/fixture-pose';
 import { CANONICAL_POSES } from '../../src/jelly-toggle-3d/physics-fixtures';
 import { createJellyPhysics, type JellyPhysics, type JellyTarget, type Point2 } from '../../src/jelly-toggle-3d/physics';
 import type { JellyRenderer } from '../../src/jelly-toggle-3d/renderer';
@@ -80,7 +84,7 @@ function createRendererFake(options: {
   const drawCalls: Array<{ jitterIndex: number; historyValid: boolean }> = [];
   const poses: Array<{ points: readonly Point2[]; discontinuous: boolean }> = [];
   const resizeCalls: Array<[number, number, number]> = [];
-  const stats = { rafRequests: 0, submissions: 0, buffersCreated: 0, buffersDestroyed: 0, texturesCreated: 0, texturesDestroyed: 0, uncapturedErrors: 0 };
+  const stats = { rafRequests: 0, submissions: 0, pipelinesCreated: 0, buffersCreated: 0, buffersDestroyed: 0, texturesCreated: 0, texturesDestroyed: 0, uncapturedErrors: 0 };
   const resizeResults = [...(options.resizeResults ?? [])];
   const destroyMock = vi.fn(() => { if (options.destroyThrows) throw new Error('destroy failed'); });
   return {
@@ -127,6 +131,7 @@ function createHarness(options: {
   renderers?: Array<JellyRenderer | Promise<JellyRenderer> | Error>;
   physicsFactory?: (target: JellyTarget) => JellyPhysics;
   observerDisconnectThrows?: boolean; cancelThrows?: boolean;
+  lifecycle?: NonNullable<JellyToggleRuntime['lifecycle']>;
 } = {}): Harness {
   const button = document.createElement('button');
   if (options.ariaChecked !== undefined) button.setAttribute('aria-checked', options.ariaChecked);
@@ -166,6 +171,7 @@ function createHarness(options: {
     },
     devicePixelRatio: () => dpr,
     reportError: (error) => { errors.push(error); },
+    lifecycle: options.lifecycle,
   } as JellyToggleRuntime;
   const toggle = createJellyToggle3DWithRuntime({
     element: button,
@@ -187,6 +193,26 @@ async function settleMicrotasks(): Promise<void> {
 }
 
 describe('createJellyToggle3D', () => {
+  it('reports balanced component ownership to the optional test runtime telemetry', async () => {
+    const counts = { mounts: 0, listeners: 0, observers: 0, animationFrames: 0 };
+    const harness = createHarness({
+      lifecycle: {
+        mount: (delta) => { counts.mounts += delta; },
+        listener: (delta) => { counts.listeners += delta; },
+        resizeObserver: (delta) => { counts.observers += delta; },
+        animationFrame: (delta) => { counts.animationFrames += delta; },
+      },
+    });
+
+    expect(counts).toMatchObject({ mounts: 1, listeners: 3, observers: 1 });
+    await harness.toggle.ready;
+    expect(counts.animationFrames).toBe(1);
+    harness.raf.flushAll();
+    expect(counts.animationFrames).toBe(0);
+    harness.toggle.destroy();
+    expect(counts).toEqual({ mounts: 0, listeners: 0, observers: 0, animationFrames: 0 });
+  });
+
   it('owns native semantics and calls onChange once per activation', () => {
     const onChange = vi.fn();
     const { button, toggle } = createHarness({ onChange });
@@ -333,6 +359,43 @@ describe('createJellyToggle3D', () => {
     raf.flushAll();
     expect(toggle.checked).toBe(false);
     expect(raf.pending).toBe(0);
+  });
+
+  it('preserves the live arch tick while freezing the verified current pose for fixture samples', async () => {
+    const renderer = createRendererFake();
+    let livePhysics: JellyPhysics | undefined;
+    const harness = createHarness({
+      renderers: [renderer],
+      physicsFactory(target) {
+        livePhysics = createJellyPhysics(target);
+        return livePhysics;
+      },
+    });
+    await harness.toggle.ready;
+    harness.raf.flushAll();
+    const fixture = selectJellyFixturePose('arch');
+
+    harness.toggle.setChecked(true, { animate: true });
+    for (let tick = 0; tick < fixture.tick; tick += 1) harness.raf.flush();
+
+    const physics = livePhysics;
+    if (!physics) throw new Error('Expected the live fixture physics instance');
+    const snapshot = physics.snapshot;
+    expect(snapshot.ticksSinceTargetChange).toBe(fixture.tick);
+    expect(snapshot.current).toEqual(fixture.pose);
+    expect(renderer.poses.at(-1)?.points).toEqual(snapshot.display);
+    expect(snapshot.display).not.toEqual(snapshot.current);
+
+    verifyAndFreezeJellyFixturePose({
+      state: 'arch',
+      fixture,
+      snapshot,
+      renderer,
+      uploadedPose: () => renderer.poses.at(-1)?.points,
+    });
+
+    expect(renderer.poses.at(-1)).toEqual({ points: fixture.pose, discontinuous: true });
+    expect(physics.snapshot.ticksSinceTargetChange).toBe(fixture.tick);
   });
 
   it('snaps reduced-motion changes and performs exactly 16 bounded draws', async () => {

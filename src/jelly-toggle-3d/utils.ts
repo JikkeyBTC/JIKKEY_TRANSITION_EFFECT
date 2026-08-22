@@ -12,6 +12,7 @@ export interface TextureResourceAccounting {
 
 export interface RendererResourceAccounting extends TextureResourceAccounting {
   submission(): void;
+  pipelineCreated?(): void;
   bufferCreated(): void;
   bufferDestroyed(): void;
 }
