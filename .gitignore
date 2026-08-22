@@ -11,3 +11,4 @@ docs/superpowers/**
 .superpowers/
 tests/fixtures/reference/*.png
 *.log
+tests/fixtures/jelly-toggle/generated/

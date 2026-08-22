@@ -24,14 +24,22 @@
     "@playwright/test": "1.62.1",
     "@types/node": "24.13.3",
     "@types/pngjs": "6.0.5",
+    "@webgpu/types": "0.1.69",
     "concurrently": "10.0.4",
     "electron": "43.4.0",
     "happy-dom": "20.11.2",
     "playwright": "1.62.1",
     "pngjs": "7.0.0",
     "typescript": "7.0.2",
+    "unplugin-typegpu": "0.10.2",
     "vite": "8.2.1",
     "vitest": "4.1.10",
     "wait-on": "9.1.0"
+  },
+  "dependencies": {
+    "@typegpu/noise": "0.10.0",
+    "@typegpu/sdf": "0.10.0",
+    "typegpu": "0.10.2",
+    "wgpu-matrix": "3.4.2"
   }
 }

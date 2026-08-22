@@ -179,9 +179,9 @@ declare function createJellyToggle3D(options: JellyToggle3DOptions): JellyToggle
 - 고주사율의 display frame은 직전/현재 simulation point 배열을 accumulator fraction으로 보간해 그리며, solver state와 fixture는 보간값으로 다시 쓰지 않는다.
 - 큰 renderer stall은 한 frame에 그대로 적분하지 않는다. accumulator 입력을 원본 상한 `0.1s`로 clamp하고 display frame당 최대 6개의 60 Hz tick만 소비하며 그보다 오래된 backlog는 버린다.
 - background tab에서 복귀하면 누락 frame을 재현하지 않고 현재 목표로부터 안정된 시간 범위만 이어간다.
-- 수렴 판정은 `abs(currentTargetX - targetX) <= 0.0005`, 고정 60 Hz simulation tick 사이 모든 point의 최대 이동 거리 `<= 0.001`, 모든 segment의 최대 rest-length residual `<= 0.005`를 동시에 사용한다. 세 조건을 연속 4 simulation tick, 즉 66.67ms 동안 만족해야 한다.
+- 수렴 판정은 `abs(currentTargetX - targetX) <= 0.0005`, 고정 60 Hz simulation tick 사이 모든 point의 최대 이동 거리 `<= 0.001`, 모든 segment의 최대 rest-length residual `<= 0.0075`를 동시에 사용한다. 세 조건을 연속 4 simulation tick, 즉 66.67ms 동안 만족해야 한다. 고정된 upstream 계산 순서의 480 tick 평형에서 OFF residual은 `0.007410221861037181`, ON residual은 `0.004441286393921176`이므로 이 상한은 17-point pose의 모든 16개 final-pose segment를 포함하면서 두 canonical 상태를 수용한다.
 - 최신 target change부터 120 simulation tick, 즉 2초에 도달하면 목표 상태의 canonical point 배열과 zero velocity로 snap한 뒤 TAA 수렴만 완료한다. 이는 비정상 상태의 무한 RAF 방지 장치다.
-- canonical OFF → ON과 ON → OFF는 각각 105 tick 안에 정상 settle해야 한다. 15 tick 간격으로 반전하는 모든 fixture는 마지막 target change부터 120 tick 안에 settle해야 한다. 이 조건을 넘으면 테스트를 실패시키므로 정상 모션이 2초 safety snap에 의해 잘리는 구현은 허용하지 않는다.
+- canonical OFF → ON과 ON → OFF는 각각 110 tick 안에 정상 settle해야 한다. 독립 reference에서 ON → OFF의 첫 qualifying tick은 106이고 4-tick settle은 109에서 완료된다. 15 tick 간격으로 반전하는 모든 fixture는 마지막 target change부터 120 tick 안에 settle해야 한다. 이 조건을 넘으면 테스트를 실패시키므로 정상 모션이 2초 safety snap에 의해 잘리는 구현은 허용하지 않는다.
 - canonical OFF/ON fixture를 생성할 때도 같은 세 settle 조건을 쓰되 최대 480개의 60 Hz tick까지만 실행한다. 상한에서 미수렴이면 fixture 생성과 테스트를 실패시킨다.
 
 ## 9. WebGPU renderer 설계
@@ -317,7 +317,7 @@ native activation
 - 60/90/120/144 Hz display schedule에서 같은 60 Hz simulation tick의 point 배열 일치와 보간된 draw pose 허용 오차
 - 중간 reversal이 position/velocity를 reset하지 않는지
 - long-frame cap과 background resume 안정성
-- settle 4 fixed tick, direct transition 105-tick 상한, reversal 120-tick 상한, 2초 안전 snap, 동일 target no-op
+- settle 4 fixed tick, direct transition 110-tick 상한, reversal 120-tick 상한, 2초 안전 snap, 동일 target no-op
 - TAA invalidation/수렴 뒤 idle RAF 0
 - init/retry/destroy generation race와 멱등 cleanup
 - device loss fallback 및 현재 checked 상태 복구
