@@ -16,6 +16,7 @@
 - Add only a standalone `/jelly-toggle.html` page and reusable `src/jelly-toggle-3d/` module; never import that module from the burn entry.
 - Use pinned upstream revision `d4433e329697c4341a9f915f75dbd9608f3939fa` and preserve the full MIT notice with `Copyright (c) 2025 Software Mansion <swmansion.com>`.
 - Pin exact resolved dependencies with no carets: `typegpu` 0.10.2, `unplugin-typegpu` 0.10.2, `@typegpu/sdf` 0.10.0, `@typegpu/noise` 0.10.0, `wgpu-matrix` 3.4.2, `@webgpu/types` 0.1.69.
+- Pin transitive `tinyest` to upstream's exact `0.3.1` resolution through pnpm 11's root `pnpm-workspace.yaml`; `0.3.2` omits the `FORMAT_VERSION` export consumed by `unplugin-typegpu` 0.10.2.
 - TypeScript 7 already supplies WebGPU DOM declarations; install `@webgpu/types` for pinned provenance but do not add it to `compilerOptions.types` unless a focused typecheck first proves a missing declaration.
 - Do not use `layoutsubtree`, canvas `paint`, `requestPaint`, `copyElementImageToTexture`, `enableBlinkFeatures`, WebGL, or a Canvas2D approximation in the new component.
 - Preserve the original 17-point PBD/SDF/raymarch/TAA scene constants and constraint ordering specified in the design; only binary input, DOM texture/text, experimental APIs, and viewport framing differ.

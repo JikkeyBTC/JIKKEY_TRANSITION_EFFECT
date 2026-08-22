@@ -283,8 +283,9 @@ README의 기존 “production path에는 WebGPU가 없다”는 설명은 burn 
 - `@typegpu/noise` 0.10.0
 - `wgpu-matrix` 3.4.2
 - `@webgpu/types` 0.1.69
+- transitive `tinyest` 0.3.1 (`pnpm-workspace.yaml` override)
 
-위 버전은 pinned upstream revision의 `package-lock.json` 실제 해상도이며 caret 없이 현재 저장소 lockfile에 고정한다. retained source가 실제로 import하지 않는 upstream demo 의존성은 추가하지 않는다. 현재 저장소의 Vite와 TypeScript 버전은 유지하고, Vite config에는 TypeGPU plugin과 두 HTML input을 함께 구성한다. 기존 renderer와 Electron TypeScript typecheck를 모두 통과해야 한다.
+위 버전은 pinned upstream revision의 `package-lock.json` 실제 해상도이며 caret 없이 현재 저장소 lockfile에 고정한다. pnpm 11에서는 `tinyest`를 root workspace override로 고정한다. `0.3.2`는 `unplugin-typegpu` 0.10.2가 metadata를 만들 때 import하는 `FORMAT_VERSION`을 노출하지 않으므로 사용할 수 없다. retained source가 실제로 import하지 않는 upstream demo 의존성은 추가하지 않는다. 현재 저장소의 Vite와 TypeScript 버전은 유지하고, Vite config에는 TypeGPU plugin과 두 HTML input을 함께 구성한다. 기존 renderer와 Electron TypeScript typecheck를 모두 통과해야 한다.
 
 ## 13. 오류 처리와 상태 흐름
 
