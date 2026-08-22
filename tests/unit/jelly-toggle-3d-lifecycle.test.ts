@@ -67,6 +67,7 @@ interface RendererFake extends JellyRenderer {
   readonly poses: Array<{ points: readonly Point2[]; discontinuous: boolean }>;
   readonly resizeCalls: Array<[number, number, number]>;
   readonly destroyMock: ReturnType<typeof vi.fn>;
+  drawHook?: () => void;
   lose(): void;
 }
 
@@ -91,7 +92,7 @@ function createRendererFake(options: { destroyThrows?: boolean; resizeThrows?: b
       return true;
     },
     setPose(points, discontinuous) { poses.push({ points: points.map((point) => ({ ...point })), discontinuous }); },
-    draw(drawOptions) { drawCalls.push(drawOptions); stats.submissions += 1; },
+    draw(drawOptions) { this.drawHook?.(); drawCalls.push(drawOptions); stats.submissions += 1; },
     resetHistory: vi.fn(),
     readDiagnostics: async () => { throw new Error('not used'); },
     destroy: destroyMock,
@@ -107,7 +108,10 @@ interface Harness {
   readonly reduced: MutableMediaQuery;
   readonly forced: MutableMediaQuery;
   readonly errors: unknown[];
+  readonly observedResizeBox: () => ResizeObserverBoxOptions | undefined;
+  readonly resolutionSignal: () => AbortSignal | undefined;
   resize(): void;
+  emitResolutionChange(): void;
   setDpr(value: number): void;
 }
 
@@ -128,8 +132,11 @@ function createHarness(options: {
   const errors: unknown[] = [];
   const rendererQueue = [...(options.renderers ?? [createRendererFake()])];
   let resizeCallback: ResizeObserverCallback = () => undefined;
+  let resolutionCallback: () => void = () => undefined;
+  let resizeBox: ResizeObserverBoxOptions | undefined;
+  let ownedResolutionSignal: AbortSignal | undefined;
   let dpr = 1;
-  const runtime: JellyToggleRuntime = {
+  const runtime = {
     createRenderer: vi.fn(async () => {
       const next = rendererQueue.shift();
       if (!next) throw new Error('No renderer queued');
@@ -142,12 +149,19 @@ function createHarness(options: {
     cancelAnimationFrame: (id) => { raf.cancel(id); if (options.cancelThrows) throw new Error('cancel failed'); },
     createResizeObserver: (callback) => {
       resizeCallback = callback;
-      return { observe: vi.fn(), disconnect: () => { if (options.observerDisconnectThrows) throw new Error('disconnect failed'); } };
+      return {
+        observe: vi.fn((_target: Element, observeOptions?: ResizeObserverOptions) => { resizeBox = observeOptions?.box; }),
+        disconnect: () => { if (options.observerDisconnectThrows) throw new Error('disconnect failed'); },
+      };
     },
     matchMedia: (query) => (query.includes('forced') ? forced : reduced) as never,
+    observeResolutionChanges: (callback: () => void, signal: AbortSignal) => {
+      resolutionCallback = callback;
+      ownedResolutionSignal = signal;
+    },
     devicePixelRatio: () => dpr,
     reportError: (error) => { errors.push(error); },
-  };
+  } as JellyToggleRuntime;
   const toggle = createJellyToggle3DWithRuntime({
     element: button,
     ...(options.checked === undefined ? {} : { checked: options.checked }),
@@ -156,7 +170,10 @@ function createHarness(options: {
     ...(options.onChange === undefined ? {} : { onChange: options.onChange }),
   }, runtime);
   return { button, toggle, runtime, raf, reduced, forced, errors,
+    observedResizeBox: () => resizeBox,
+    resolutionSignal: () => ownedResolutionSignal,
     resize: () => resizeCallback([], {} as ResizeObserver),
+    emitResolutionChange: () => resolutionCallback(),
     setDpr: (value) => { dpr = value; } };
 }
 
@@ -212,6 +229,24 @@ describe('createJellyToggle3D', () => {
     expect(renderer.poses.at(-1)?.points).toEqual(CANONICAL_POSES.on);
   });
 
+  it('reveals initial ON only after a hidden invalid-history seed draw', async () => {
+    const renderer = createRendererFake();
+    const harness = createHarness({ checked: true, renderers: [renderer] });
+    const visibility: Array<[boolean, boolean]> = [];
+    renderer.drawHook = () => visibility.push([
+      Boolean((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden),
+      Boolean((harness.button.querySelector('span') as HTMLSpanElement).hidden),
+    ]);
+    await expect(harness.toggle.ready).resolves.toBe('webgpu');
+    expect(renderer.poses.at(-1)?.points).toEqual(CANONICAL_POSES.on);
+    expect(renderer.drawCalls).toHaveLength(1);
+    expect(renderer.drawCalls[0]).toMatchObject({ historyValid: false });
+    expect(visibility[0]).toEqual([true, false]);
+    expect((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden).toBe(false);
+    expect(harness.raf.flushAll()).toBe(15);
+    expect(renderer.drawCalls).toHaveLength(16);
+  });
+
   it('suppresses disabled activation', () => {
     const onChange = vi.fn();
     const { button, toggle } = createHarness({ onChange });
@@ -250,6 +285,7 @@ describe('createJellyToggle3D', () => {
     expect(harness.button.getAttribute('aria-checked')).toBe('true');
     expect(harness.button.querySelector('.jelly-toggle-3d__canvas')).toBeNull();
     expect(harness.raf.pending).toBe(0);
+    expect(harness.observedResizeBox()).toBe('device-pixel-content-box');
   });
 
   it('keeps the deepest reentrant native activation as the final state', async () => {
@@ -284,7 +320,7 @@ describe('createJellyToggle3D', () => {
     await toggle.ready; raf.flushAll();
     const baseline = renderer.drawCalls.length;
     toggle.setChecked(true);
-    expect(raf.flushAll()).toBe(16);
+    expect(raf.flushAll()).toBe(15);
     expect(renderer.drawCalls.length - baseline).toBe(16);
     expect(renderer.poses.at(-1)).toMatchObject({ points: CANONICAL_POSES.on, discontinuous: true });
   });
@@ -292,9 +328,11 @@ describe('createJellyToggle3D', () => {
   it('snaps an active animation when reduced motion changes at runtime', async () => {
     const renderer = createRendererFake();
     const { button, toggle, reduced, raf } = createHarness({ renderers: [renderer] });
-    await toggle.ready; raf.flushAll(); button.click(); raf.flush(); reduced.set(true);
+    await toggle.ready; raf.flushAll(); button.click(); raf.flush();
     const baseline = renderer.drawCalls.length;
-    expect(raf.flushAll()).toBe(16);
+    reduced.set(true);
+    expect(renderer.drawCalls.length - baseline).toBe(1);
+    expect(raf.flushAll()).toBe(15);
     expect(renderer.drawCalls.length - baseline).toBe(16);
     reduced.set(false);
     expect(raf.pending).toBe(0);
@@ -308,9 +346,28 @@ describe('createJellyToggle3D', () => {
     expect((button.querySelector('canvas') as HTMLCanvasElement).hidden).toBe(true);
     const baseline = renderer.drawCalls.length;
     forced.set(false);
-    expect(raf.flushAll()).toBe(16);
+    expect(raf.flushAll()).toBe(15);
     expect(renderer.drawCalls.length - baseline).toBe(16);
     expect(renderer.poses.at(-1)?.points).toEqual(CANONICAL_POSES.on);
+  });
+
+  it('seeds the latest canonical state while hidden before forced-colors exit reveals it', async () => {
+    const renderer = createRendererFake();
+    const harness = createHarness({ renderers: [renderer] });
+    await harness.toggle.ready; harness.raf.flushAll();
+    harness.forced.set(true); harness.toggle.setChecked(true);
+    harness.setDpr(2); harness.emitResolutionChange();
+    const baseline = renderer.drawCalls.length;
+    const visibility: boolean[] = [];
+    renderer.drawHook = () => visibility.push(Boolean((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden));
+    harness.forced.set(false);
+    expect(renderer.drawCalls.length - baseline).toBe(1);
+    expect(renderer.drawCalls.at(-1)).toMatchObject({ historyValid: false });
+    expect(visibility).toEqual([true]);
+    expect((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden).toBe(false);
+    expect(renderer.resizeCalls.at(-1)).toEqual([88, 44, 2]);
+    expect(harness.raf.flushAll()).toBe(15);
+    expect(renderer.drawCalls.length - baseline).toBe(16);
   });
 
   it('starts forced-colors idle and recovers the latest semantic state', async () => {
@@ -322,7 +379,7 @@ describe('createJellyToggle3D', () => {
     expect(harness.toggle.checked).toBe(true);
     expect(renderer.drawCalls).toHaveLength(0);
     harness.forced.set(false);
-    expect(harness.raf.flushAll()).toBe(16);
+    expect(harness.raf.flushAll()).toBe(15);
     expect(renderer.poses.at(-1)?.points).toEqual(CANONICAL_POSES.on);
   });
 
@@ -340,7 +397,38 @@ describe('createJellyToggle3D', () => {
     const harness = createHarness({ renderers: [renderer] });
     await harness.toggle.ready; harness.raf.flushAll(); harness.setDpr(2.5); harness.resize();
     expect(renderer.resizeCalls.at(-1)).toEqual([88, 44, 2.5]);
-    expect(harness.raf.flushAll()).toBe(16);
+    expect(harness.raf.flushAll()).toBe(15);
+  });
+
+  it('seeds hidden history immediately before redraw reveals replacement backing', async () => {
+    const renderer = createRendererFake();
+    const harness = createHarness({ renderers: [renderer] });
+    await harness.toggle.ready; harness.raf.flushAll();
+    const baseline = renderer.drawCalls.length;
+    const visibility: boolean[] = [];
+    renderer.drawHook = () => visibility.push(Boolean((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden));
+    harness.toggle.redraw();
+    expect(renderer.drawCalls.length - baseline).toBe(1);
+    expect(renderer.drawCalls.at(-1)).toMatchObject({ historyValid: false });
+    expect(visibility).toEqual([true]);
+    expect((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden).toBe(false);
+    expect(harness.raf.flushAll()).toBe(15);
+    expect(renderer.drawCalls.length - baseline).toBe(16);
+  });
+
+  it('migrates DPR from complete idle on the owned resolution event and returns idle', async () => {
+    const renderer = createRendererFake();
+    const harness = createHarness({ renderers: [renderer] });
+    await harness.toggle.ready; harness.raf.flushAll();
+    const baseline = renderer.drawCalls.length;
+    expect(harness.raf.pending).toBe(0);
+    harness.setDpr(2);
+    harness.emitResolutionChange();
+    expect(renderer.resizeCalls.at(-1)).toEqual([88, 44, 2]);
+    expect(renderer.drawCalls.length - baseline).toBe(1);
+    expect(harness.raf.flushAll()).toBe(15);
+    expect(renderer.drawCalls.length - baseline).toBe(16);
+    expect(harness.raf.pending).toBe(0);
   });
 
   it('invalidates history when DPR changes during an active frame', async () => {
@@ -363,6 +451,48 @@ describe('createJellyToggle3D', () => {
     harness.raf.flushAll(); second.lose(); await settleMicrotasks();
     expect(harness.runtime.createRenderer).toHaveBeenCalledTimes(2);
     expect(harness.raf.pending).toBe(0);
+    expect(harness.button.dataset.jellyToggleFallbackReason).toBe('device-lost');
+  });
+
+  it('keeps failed automatic recovery idle without a third attempt and permits manual retry', async () => {
+    const first = createRendererFake();
+    const manual = createRendererFake();
+    const harness = createHarness({ renderers: [first, new Error('automatic failed'), manual] });
+    await harness.toggle.ready; harness.raf.flushAll(); first.lose();
+    await settleMicrotasks(); await settleMicrotasks();
+    expect(harness.runtime.createRenderer).toHaveBeenCalledTimes(2);
+    expect(harness.raf.pending).toBe(0);
+    expect(harness.button.dataset.jellyToggleFallbackReason).toBe('device-lost');
+    await expect(harness.toggle.retryWebGPU()).resolves.toBe('webgpu');
+    expect(harness.runtime.createRenderer).toHaveBeenCalledTimes(3);
+  });
+
+  it('preserves normalized fallback reason and clears it after successful recovery', async () => {
+    const renderer = createRendererFake();
+    const harness = createHarness({ renderers: [new Error('no adapter'), renderer] });
+    await expect(harness.toggle.ready).resolves.toBe('fallback');
+    expect(harness.button.dataset.jellyToggleFallbackReason).toBe('initialization-failed');
+    await expect(harness.toggle.retryWebGPU()).resolves.toBe('webgpu');
+    expect(harness.button.dataset.jellyToggleFallbackReason).toBeUndefined();
+  });
+
+  it('keeps recovery hidden and seeds the latest state before revealing after device loss', async () => {
+    const first = createRendererFake();
+    const deferred = createDeferred<JellyRenderer>();
+    const recovered = createRendererFake();
+    const harness = createHarness({ renderers: [first, deferred.promise] });
+    await harness.toggle.ready; harness.raf.flushAll(); first.lose(); await settleMicrotasks();
+    expect(harness.button.dataset.jellyToggleFallbackReason).toBe('device-lost');
+    harness.button.click();
+    const visibility: boolean[] = [];
+    recovered.drawHook = () => visibility.push(Boolean((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden));
+    deferred.resolve(recovered); await settleMicrotasks();
+    expect(recovered.poses.at(-1)?.points).toEqual(CANONICAL_POSES.on);
+    expect(recovered.drawCalls).toHaveLength(1);
+    expect(visibility).toEqual([true]);
+    expect((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden).toBe(false);
+    expect(harness.button.dataset.jellyToggleFallbackReason).toBeUndefined();
+    expect(harness.raf.flushAll()).toBe(15);
   });
 
   it('retries a device already lost while its initialization attempt is settling', async () => {
@@ -430,6 +560,7 @@ describe('createJellyToggle3D', () => {
     expect(harness.button.querySelector('.jelly-toggle-3d__fallback')).toBeNull();
     expect(renderer.destroyMock).toHaveBeenCalledOnce();
     expect(harness.errors).toHaveLength(3);
+    expect(harness.resolutionSignal()?.aborted).toBe(true);
     await expect(harness.toggle.retryWebGPU()).resolves.toBe('destroyed');
   });
 });

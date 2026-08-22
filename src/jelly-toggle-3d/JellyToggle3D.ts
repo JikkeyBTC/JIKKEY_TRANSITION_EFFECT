@@ -33,6 +33,7 @@ export interface JellyToggleRuntime {
   cancelAnimationFrame(handle: number): void;
   createResizeObserver(callback: ResizeObserverCallback): Pick<ResizeObserver, 'observe' | 'disconnect'>;
   matchMedia(query: string): Pick<MediaQueryList, 'matches' | 'addEventListener' | 'removeEventListener'>;
+  observeResolutionChanges(callback: () => void, signal: AbortSignal): void;
   devicePixelRatio(): number;
   reportError(error: unknown): void;
 }
@@ -48,6 +49,20 @@ function defaultRuntime(): JellyToggleRuntime {
     cancelAnimationFrame: (handle) => window.cancelAnimationFrame(handle),
     createResizeObserver: (callback) => new ResizeObserver(callback),
     matchMedia: (query) => window.matchMedia(query),
+    observeResolutionChanges: (callback, signal) => {
+      window.addEventListener('resize', callback, { signal });
+      let resolutionQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      const armResolutionQuery = (): void => {
+        resolutionQuery.addEventListener('change', onResolutionChange, { once: true, signal });
+      };
+      const onResolutionChange = (): void => {
+        callback();
+        if (signal.aborted) return;
+        resolutionQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+        armResolutionQuery();
+      };
+      armResolutionQuery();
+    },
     devicePixelRatio: () => window.devicePixelRatio,
     reportError: (error) => {
       if (typeof globalThis.reportError === 'function') globalThis.reportError(error);
@@ -125,6 +140,11 @@ export function createJellyToggle3DWithRuntime(
     fallback.hidden = showGpu;
     element.dataset.jellyToggleMode = showGpu ? 'webgpu' : mode === 'destroyed' ? 'destroyed' : 'fallback';
   };
+
+  const setFallbackReason = (reason?: 'initialization-failed' | 'device-lost' | 'renderer-error'): void => {
+    if (reason) element.dataset.jellyToggleFallbackReason = reason;
+    else delete element.dataset.jellyToggleFallbackReason;
+  };
   showCurrentMode();
 
   const cancelFrame = (): void => {
@@ -141,6 +161,7 @@ export function createJellyToggle3DWithRuntime(
     deviceGeneration += 1;
     renderer = null;
     mode = 'fallback';
+    setFallbackReason('renderer-error');
     cancelFrame();
     safely(() => failed.destroy());
     showCurrentMode();
@@ -194,15 +215,8 @@ export function createJellyToggle3DWithRuntime(
     ) return;
 
     if (finiteDpr(runtime.devicePixelRatio()) !== lastDpr) {
-      const resized = resizeRenderer(active, device);
-      if (mode !== 'webgpu') return;
-      if (resized) {
-        try { active.resetHistory(); } catch (error) {
-          failCurrentRenderer(active, device, error);
-          return;
-        }
-        taa.invalidate();
-      }
+      redrawInternal();
+      return;
     }
 
     const elapsed = lastFrameTime === null
@@ -239,19 +253,42 @@ export function createJellyToggle3DWithRuntime(
     else lastFrameTime = null;
   };
 
+  const seedInvalidHistory = (
+    active: JellyRenderer,
+    device: number,
+    discontinuous: boolean,
+  ): boolean => {
+    if (destroyed || renderer !== active || deviceGeneration !== device || mode !== 'webgpu' || forcedColors) {
+      return false;
+    }
+    canvas.hidden = true;
+    fallback.hidden = false;
+    try {
+      const snapshot = physics.snapshot;
+      active.setPose(snapshot.settled ? snapshot.current : snapshot.display, discontinuous);
+      active.resetHistory();
+      taa.invalidate();
+      const seed = taa.consumeStationarySample();
+      active.draw({ jitterIndex: jitterIndex++, historyValid: seed.historyValid });
+    } catch (error) {
+      failCurrentRenderer(active, device, error);
+      return false;
+    }
+    if (destroyed || renderer !== active || deviceGeneration !== device || mode !== 'webgpu' || forcedColors) {
+      return false;
+    }
+    setFallbackReason();
+    lastFrameTime = null;
+    showCurrentMode();
+    scheduleFrame();
+    return true;
+  };
+
   const uploadCanonical = (): void => {
     const active = renderer;
     const device = deviceGeneration;
     if (!active || mode !== 'webgpu' || forcedColors || destroyed) return;
-    try {
-      active.setPose(physics.snapshot.current, true);
-      active.resetHistory();
-      taa.invalidate();
-      lastFrameTime = null;
-      scheduleFrame();
-    } catch (error) {
-      failCurrentRenderer(active, device, error);
-    }
+    seedInvalidHistory(active, device, true);
   };
 
   const applyVisualTarget = (next: boolean, animate = true): void => {
@@ -309,7 +346,11 @@ export function createJellyToggle3DWithRuntime(
       showCurrentMode();
       return;
     }
-    showCurrentMode();
+    const active = renderer;
+    if (active && mode === 'webgpu') {
+      resizeRenderer(active, deviceGeneration);
+      if (mode !== 'webgpu') return;
+    }
     uploadCanonical();
   };
 
@@ -321,17 +362,12 @@ export function createJellyToggle3DWithRuntime(
     signal: abortController.signal,
   });
 
-  const resizeObserver = runtime.createResizeObserver(() => {
-    if (destroyed || mode !== 'webgpu' || forcedColors) return;
-    api.redraw();
-  });
-  resizeObserver.observe(canvas);
-
   const handleDeviceLoss = (lostRenderer: JellyRenderer, generation: number): void => {
     if (destroyed || renderer !== lostRenderer || deviceGeneration !== generation) return;
     deviceGeneration += 1;
     renderer = null;
     mode = 'fallback';
+    setFallbackReason('device-lost');
     cancelFrame();
     safely(() => lostRenderer.destroy());
     showCurrentMode();
@@ -366,6 +402,9 @@ export function createJellyToggle3DWithRuntime(
         return destroyed ? 'destroyed' : 'fallback';
       }
       mode = 'fallback';
+      if (element.dataset.jellyToggleFallbackReason !== 'device-lost') {
+        setFallbackReason('initialization-failed');
+      }
       showCurrentMode();
       return 'fallback';
     }
@@ -384,9 +423,14 @@ export function createJellyToggle3DWithRuntime(
       const [width, height] = size();
       lastDpr = finiteDpr(runtime.devicePixelRatio());
       acquired.resize(width, height, lastDpr);
-      acquired.setPose(physics.snapshot.current, true);
-      acquired.resetHistory();
-      taa.invalidate();
+      if (forcedColors) {
+        acquired.setPose(physics.snapshot.current, true);
+        acquired.resetHistory();
+        taa.invalidate();
+        setFallbackReason();
+      } else if (!seedInvalidHistory(acquired, generation, true)) {
+        return destroyed ? 'destroyed' : 'fallback';
+      }
     } catch (error) {
       failCurrentRenderer(acquired, generation, error);
       return 'fallback';
@@ -396,8 +440,7 @@ export function createJellyToggle3DWithRuntime(
       () => handleDeviceLoss(acquired, generation),
       (error) => failCurrentRenderer(acquired, generation, error),
     );
-    showCurrentMode();
-    if (!forcedColors) scheduleFrame();
+    if (forcedColors) showCurrentMode();
     return 'webgpu';
   };
 
@@ -414,6 +457,23 @@ export function createJellyToggle3DWithRuntime(
     return attempt;
   }
 
+  const redrawInternal = (): void => {
+    if (destroyed || mode !== 'webgpu' || forcedColors || !renderer) return;
+    const active = renderer;
+    const generation = deviceGeneration;
+    resizeRenderer(active, generation);
+    if (mode !== 'webgpu') return;
+    seedInvalidHistory(active, generation, false);
+  };
+
+  const resizeObserver = runtime.createResizeObserver(() => redrawInternal());
+  try {
+    resizeObserver.observe(canvas, { box: 'device-pixel-content-box' });
+  } catch {
+    resizeObserver.observe(canvas);
+  }
+  runtime.observeResolutionChanges(redrawInternal, abortController.signal);
+
   const api: JellyToggle3D = {
     ready,
     get checked() { return semanticChecked; },
@@ -421,22 +481,7 @@ export function createJellyToggle3DWithRuntime(
       setSemantic(Boolean(next), false, setOptions?.animate !== false);
     },
     redraw() {
-      if (destroyed || mode !== 'webgpu' || forcedColors || !renderer) return;
-      const active = renderer;
-      const generation = deviceGeneration;
-      if (!resizeRenderer(active, generation) && mode !== 'webgpu') return;
-      try {
-        active.setPose(
-          physics.snapshot.settled ? physics.snapshot.current : physics.snapshot.display,
-          false,
-        );
-        active.resetHistory();
-        taa.invalidate();
-        lastFrameTime = null;
-        scheduleFrame();
-      } catch (error) {
-        failCurrentRenderer(active, generation, error);
-      }
+      redrawInternal();
     },
     retryWebGPU() {
       if (destroyed) return Promise.resolve('destroyed');
