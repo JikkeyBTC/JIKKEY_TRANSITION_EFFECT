@@ -16,6 +16,16 @@ export interface RendererResourceAccounting extends TextureResourceAccounting {
   bufferDestroyed(): void;
 }
 
+export function rollbackCleanups(cleanups: Array<() => void>): void {
+  while (cleanups.length > 0) {
+    try {
+      cleanups.pop()!();
+    } catch {
+      // Preserve the construction error and continue releasing earlier owners.
+    }
+  }
+}
+
 export function createTextureBundle<
   TTexture extends TgpuTexture,
   TEntry extends { texture: TTexture },

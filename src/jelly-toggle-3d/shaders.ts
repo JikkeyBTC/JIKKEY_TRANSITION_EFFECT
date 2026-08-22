@@ -24,6 +24,7 @@ import {
   beerLambert,
   fresnelSchlick,
   intersectBox,
+  rollbackCleanups,
   type RendererResourceAccounting,
 } from './utils';
 
@@ -85,6 +86,9 @@ export function createJellyShaders(
     magFilter: 'linear',
     minFilter: 'linear',
   });
+  const ownedUniforms: Array<{ destroy(): void }> = [];
+  const constructionCleanups: Array<() => void> = [];
+  try {
   const cameraUniform = camera.cameraUniform;
   const lightUniform = root.createUniform(DirectionalLight, {
     direction: std.normalize(d.vec3f(
@@ -94,6 +98,13 @@ export function createJellyShaders(
     )),
     color: d.vec3f(1, 1, 1),
   });
+  accounting.bufferCreated();
+  ownedUniforms.push(lightUniform.buffer);
+  constructionCleanups.push(() => {
+    lightUniform.buffer.destroy();
+    accounting.bufferDestroyed();
+  });
+  root.unwrap(lightUniform.buffer);
   const jellyColorUniform = root.createUniform(
     d.vec4f,
     d.vec4f(
@@ -103,19 +114,45 @@ export function createJellyShaders(
       MATERIAL.jellyColor[3],
     ),
   );
+  accounting.bufferCreated();
+  ownedUniforms.push(jellyColorUniform.buffer);
+  constructionCleanups.push(() => {
+    jellyColorUniform.buffer.destroy();
+    accounting.bufferDestroyed();
+  });
+  root.unwrap(jellyColorUniform.buffer);
   const jellyScatterUniform = root.createUniform(d.f32, JELLY_SCATTER_STRENGTH);
+  accounting.bufferCreated();
+  ownedUniforms.push(jellyScatterUniform.buffer);
+  constructionCleanups.push(() => {
+    jellyScatterUniform.buffer.destroy();
+    accounting.bufferDestroyed();
+  });
+  root.unwrap(jellyScatterUniform.buffer);
   const groundColorUniform = root.createUniform(d.vec3f, d.vec3f(1.0));
+  accounting.bufferCreated();
+  ownedUniforms.push(groundColorUniform.buffer);
+  constructionCleanups.push(() => {
+    groundColorUniform.buffer.destroy();
+    accounting.bufferDestroyed();
+  });
+  root.unwrap(groundColorUniform.buffer);
   const randomUniform = root.createUniform(d.vec2f, d.vec2f(0, 0));
+  accounting.bufferCreated();
+  ownedUniforms.push(randomUniform.buffer);
+  constructionCleanups.push(() => {
+    randomUniform.buffer.destroy();
+    accounting.bufferDestroyed();
+  });
+  root.unwrap(randomUniform.buffer);
   const blurEnabledUniform = root.createUniform(d.u32, d.u32(0));
-  const ownedUniforms = [
-    lightUniform.buffer,
-    jellyColorUniform.buffer,
-    jellyScatterUniform.buffer,
-    groundColorUniform.buffer,
-    randomUniform.buffer,
-    blurEnabledUniform.buffer,
-  ] as const;
-  for (const _buffer of ownedUniforms) accounting.bufferCreated();
+  accounting.bufferCreated();
+  ownedUniforms.push(blurEnabledUniform.buffer);
+  constructionCleanups.push(() => {
+    blurEnabledUniform.buffer.destroy();
+    accounting.bufferDestroyed();
+  });
+  root.unwrap(blurEnabledUniform.buffer);
 
 const getRay = (ndc: d.v2f) => {
   'use gpu';
@@ -724,7 +761,7 @@ const fragmentMain = tgpu.fragmentFn({
   });
 
   let destroyed = false;
-  return {
+  const shaders = {
     drawRaymarch(
       colorView: TgpuTextureView<d.WgslTexture2d<d.F32>>,
       diagnostics: DiagnosticRenderViews | undefined,
@@ -782,4 +819,10 @@ const fragmentMain = tgpu.fragmentFn({
       }
     },
   };
+  constructionCleanups.length = 0;
+  return shaders;
+  } catch (cause) {
+    rollbackCleanups(constructionCleanups);
+    throw cause;
+  }
 }

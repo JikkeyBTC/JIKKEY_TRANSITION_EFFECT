@@ -12,6 +12,7 @@ import {
   createColorTextures,
   createDiagnosticTextures,
   destroyTextureEntries,
+  rollbackCleanups,
   type RendererResourceAccounting,
 } from './utils';
 
@@ -308,13 +309,7 @@ export async function createJellyRenderer(
     return renderer;
   } catch (cause) {
     device.removeEventListener('uncapturederror', onUncapturedError);
-    for (let index = initializationCleanups.length - 1; index >= 0; index -= 1) {
-      try {
-        initializationCleanups[index]!();
-      } catch {
-        // Preserve the original initialization failure while continuing cleanup.
-      }
-    }
+    rollbackCleanups(initializationCleanups);
     try {
       initializedRoot?.destroy();
     } catch {

@@ -4,7 +4,10 @@ import type { TgpuRoot, TgpuUniform } from 'typegpu';
 import { d } from 'typegpu';
 import * as m from 'wgpu-matrix';
 
-import type { RendererResourceAccounting } from './utils';
+import {
+  rollbackCleanups,
+  type RendererResourceAccounting,
+} from './utils';
 
 const Camera = d.struct({
   view: d.mat4x4f,
@@ -54,13 +57,25 @@ export class CameraController {
     this.#baseProj = m.mat4.perspective(fov, width / height, near, far, d.mat4x4f());
     this.#viewInv = m.mat4.invert(this.#view, d.mat4x4f());
     const projInv = m.mat4.invert(this.#baseProj, d.mat4x4f());
-    this.#uniform = root.createUniform(Camera, {
-      view: this.#view,
-      proj: this.#baseProj,
-      viewInv: this.#viewInv,
-      projInv,
-    });
-    this.#accounting.bufferCreated();
+    const constructionCleanups: Array<() => void> = [];
+    try {
+      this.#uniform = root.createUniform(Camera, {
+        view: this.#view,
+        proj: this.#baseProj,
+        viewInv: this.#viewInv,
+        projInv,
+      });
+      this.#accounting.bufferCreated();
+      constructionCleanups.push(() => {
+        this.#uniform.buffer.destroy();
+        this.#accounting.bufferDestroyed();
+      });
+      root.unwrap(this.#uniform.buffer);
+      constructionCleanups.length = 0;
+    } catch (cause) {
+      rollbackCleanups(constructionCleanups);
+      throw cause;
+    }
   }
 
   jitter(index: number): void {

@@ -14,7 +14,10 @@ import { d, std } from 'typegpu';
 
 import { JELLY } from './constants';
 import type { Point2 } from './physics';
-import type { RendererResourceAccounting } from './utils';
+import {
+  rollbackCleanups,
+  type RendererResourceAccounting,
+} from './utils';
 
 export const BEZIER_TEXTURE_SIZE = [256, 128] as const;
 
@@ -58,27 +61,45 @@ export class SliderGpu {
     this.#computeNormals();
     this.#computeControlPoints();
 
+    const constructionCleanups: Array<() => void> = [];
+    try {
     this.pointsBuffer = root
       .createBuffer(d.arrayOf(d.vec2f, JELLY.pointCount), this.#points)
       .$usage('storage')
       .$name('jelly points');
+    accounting.bufferCreated();
+    constructionCleanups.push(() => {
+      this.pointsBuffer.destroy();
+      accounting.bufferDestroyed();
+    });
     this.controlPointsBuffer = root
       .createBuffer(d.arrayOf(d.vec2f, JELLY.pointCount - 1), this.#controlPoints)
       .$usage('storage')
       .$name('jelly control points');
+    accounting.bufferCreated();
+    constructionCleanups.push(() => {
+      this.controlPointsBuffer.destroy();
+      accounting.bufferDestroyed();
+    });
     this.normalsBuffer = root
       .createBuffer(d.arrayOf(d.vec2f, JELLY.pointCount), this.#normals)
       .$usage('storage')
       .$name('jelly normals');
     accounting.bufferCreated();
-    accounting.bufferCreated();
-    accounting.bufferCreated();
+    constructionCleanups.push(() => {
+      this.normalsBuffer.destroy();
+      accounting.bufferDestroyed();
+    });
 
     this.bezierTexture = root['~unstable']
       .createTexture({ size: BEZIER_TEXTURE_SIZE, format: 'rgba16float' })
       .$usage('sampled', 'storage', 'render')
       .$name('jelly quadratic bezier sdf');
     accounting.textureCreated();
+    constructionCleanups.push(() => {
+      this.bezierTexture.destroy();
+      accounting.textureDestroyed();
+    });
 
     const secondLast = this.#points[JELLY.pointCount - 2]!;
     const last = this.#points[JELLY.pointCount - 1]!;
@@ -88,6 +109,10 @@ export class SliderGpu {
     );
     this.endCapUniform.$name('jelly end cap');
     accounting.bufferCreated();
+    constructionCleanups.push(() => {
+      this.endCapUniform.buffer.destroy();
+      accounting.bufferDestroyed();
+    });
 
     const bezierWriteView = this.bezierTexture.createView(
       d.textureStorage2d('rgba16float', 'write-only'),
@@ -154,8 +179,17 @@ export class SliderGpu {
       );
     });
     accounting.bufferCreated();
+    constructionCleanups.push(() => {
+      this.#computeBezierPipeline.sizeUniform.buffer.destroy();
+      accounting.bufferDestroyed();
+    });
 
     this.setPose(initialPoints);
+    constructionCleanups.length = 0;
+    } catch (cause) {
+      rollbackCleanups(constructionCleanups);
+      throw cause;
+    }
   }
 
   setPose(points: readonly Point2[]): void {

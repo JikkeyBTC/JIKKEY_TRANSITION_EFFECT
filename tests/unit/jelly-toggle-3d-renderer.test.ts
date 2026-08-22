@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import tgpu from 'typegpu';
 
 import { CANONICAL_POSES } from '../../src/jelly-toggle-3d/physics-fixtures';
 import {
@@ -14,6 +15,7 @@ class FakeBuffer {
   destroyed = false;
   mapState: GPUBufferMapState = 'unmapped';
   lastWriteSize = 0;
+  destroyCalls = 0;
 
   constructor(
     readonly descriptor: GPUBufferDescriptor,
@@ -23,6 +25,7 @@ class FakeBuffer {
   }
 
   destroy(): void {
+    this.destroyCalls += 1;
     if (this.destroyed) return;
     this.destroyed = true;
     this.onDestroy();
@@ -43,6 +46,7 @@ class FakeBuffer {
 
 class FakeTexture {
   destroyed = false;
+  destroyCalls = 0;
   readonly size: TextureSize;
 
   constructor(
@@ -68,6 +72,7 @@ class FakeTexture {
   }
 
   destroy(): void {
+    this.destroyCalls += 1;
     if (this.destroyed) return;
     this.destroyed = true;
     this.onDestroy();
@@ -85,7 +90,10 @@ interface FakeGpuHarness {
   readonly configuredFormat: GPUTextureFormat | undefined;
   readonly deviceDestroyCount: number;
   readonly contextUnconfigureCount: number;
+  readonly listenerCount: number;
   failNextWrite: boolean;
+  failBufferCreationIn: number | undefined;
+  bufferCreationFailure: Error | undefined;
   failTextureCreationIn: number | undefined;
   emitUncaptured(error: Error): void;
 }
@@ -166,6 +174,13 @@ function createFakeGpu(): FakeGpuHarness {
       listeners.delete(listener as (event: GPUUncapturedErrorEvent) => void);
     },
     createBuffer: (descriptor: GPUBufferDescriptor) => {
+      if (harness.failBufferCreationIn !== undefined) {
+        if (harness.failBufferCreationIn === 0) {
+          harness.failBufferCreationIn = undefined;
+          throw harness.bufferCreationFailure ?? new Error('synthetic buffer allocation failure');
+        }
+        harness.failBufferCreationIn -= 1;
+      }
       const buffer = new FakeBuffer(descriptor, () => { destroyedBuffers += 1; });
       buffers.push(buffer);
       return buffer;
@@ -242,7 +257,10 @@ function createFakeGpu(): FakeGpuHarness {
     get configuredFormat() { return configuredFormat; },
     get deviceDestroyCount() { return deviceDestroyCount; },
     get contextUnconfigureCount() { return contextUnconfigureCount; },
+    get listenerCount() { return listeners.size; },
     failNextWrite: false,
+    failBufferCreationIn: undefined,
+    bufferCreationFailure: undefined,
     failTextureCreationIn: undefined,
     emitUncaptured(error: Error) {
       const event = { type: 'uncapturederror', error } as unknown as GPUUncapturedErrorEvent;
@@ -294,6 +312,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   if (originalGpu) Object.defineProperty(navigator, 'gpu', originalGpu);
   else Reflect.deleteProperty(navigator, 'gpu');
@@ -445,6 +464,56 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
     expect(fake.buffers.every((buffer) => buffer.destroyed)).toBe(true);
     expect(fake.textures.every((texture) => texture.destroyed)).toBe(true);
     expect(fake.contextUnconfigureCount).toBe(1);
+    expect(fake.deviceDestroyCount).toBe(1);
+  });
+
+  it.each([
+    {
+      stage: 'SliderGpu',
+      successfulBuffersBeforeFailure: 1,
+      expectedTexturesBeforeFailure: 0,
+    },
+    {
+      stage: 'CameraController',
+      successfulBuffersBeforeFailure: 5,
+      expectedTexturesBeforeFailure: 1,
+    },
+    {
+      stage: 'createJellyShaders',
+      successfulBuffersBeforeFailure: 7,
+      expectedTexturesBeforeFailure: 1,
+    },
+  ])('unwinds a partial $stage construction without replacing its error', async ({
+    stage,
+    successfulBuffersBeforeFailure,
+    expectedTexturesBeforeFailure,
+  }) => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+    const probeRoot = tgpu.initFromDevice({ device: fake.device });
+    const rootDestroy = vi.spyOn(Object.getPrototypeOf(probeRoot), 'destroy');
+    const stageError = new Error(`${stage} construction failure`);
+    fake.failBufferCreationIn = successfulBuffersBeforeFailure;
+    fake.bufferCreationFailure = stageError;
+
+    const caught = await createJellyRenderer(canvas, 'diagnostic').catch(
+      (error: unknown) => error,
+    );
+
+    expect(caught).toBeInstanceOf(JellyRendererError);
+    expect((caught as JellyRendererError).cause).toBe(stageError);
+    expect(fake.buffers.length).toBe(successfulBuffersBeforeFailure);
+    expect(fake.textures.length).toBe(expectedTexturesBeforeFailure);
+    expect(fake.buffers.every((buffer) => buffer.destroyed)).toBe(true);
+    expect(fake.textures.every((texture) => texture.destroyed)).toBe(true);
+    expect(fake.buffers.every((buffer) => buffer.destroyCalls === 1)).toBe(true);
+    expect(fake.textures.every((texture) => texture.destroyCalls === 1)).toBe(true);
+    expect(fake.listenerCount).toBe(0);
+    expect(fake.contextUnconfigureCount).toBe(1);
+    expect(rootDestroy).toHaveBeenCalledTimes(1);
     expect(fake.deviceDestroyCount).toBe(1);
   });
 
