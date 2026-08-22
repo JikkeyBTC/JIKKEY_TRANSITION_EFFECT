@@ -71,12 +71,17 @@ interface RendererFake extends JellyRenderer {
   lose(): void;
 }
 
-function createRendererFake(options: { destroyThrows?: boolean; resizeThrows?: boolean } = {}): RendererFake {
+function createRendererFake(options: {
+  destroyThrows?: boolean;
+  resizeThrows?: boolean;
+  resizeResults?: boolean[];
+} = {}): RendererFake {
   const lost = createDeferred<GPUDeviceLostInfo>();
   const drawCalls: Array<{ jitterIndex: number; historyValid: boolean }> = [];
   const poses: Array<{ points: readonly Point2[]; discontinuous: boolean }> = [];
   const resizeCalls: Array<[number, number, number]> = [];
   const stats = { rafRequests: 0, submissions: 0, buffersCreated: 0, buffersDestroyed: 0, texturesCreated: 0, texturesDestroyed: 0, uncapturedErrors: 0 };
+  const resizeResults = [...(options.resizeResults ?? [])];
   const destroyMock = vi.fn(() => { if (options.destroyThrows) throw new Error('destroy failed'); });
   return {
     device: {} as GPUDevice,
@@ -89,7 +94,7 @@ function createRendererFake(options: { destroyThrows?: boolean; resizeThrows?: b
     resize(width, height, dpr) {
       resizeCalls.push([width, height, dpr]);
       if (options.resizeThrows) throw new Error('resize failed');
-      return true;
+      return resizeResults.shift() ?? true;
     },
     setPose(points, discontinuous) { poses.push({ points: points.map((point) => ({ ...point })), discontinuous }); },
     draw(drawOptions) { this.drawHook?.(); drawCalls.push(drawOptions); stats.submissions += 1; },
@@ -243,6 +248,22 @@ describe('createJellyToggle3D', () => {
     expect(renderer.drawCalls[0]).toMatchObject({ historyValid: false });
     expect(visibility[0]).toEqual([true, false]);
     expect((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden).toBe(false);
+    expect(harness.raf.flushAll()).toBe(15);
+    expect(renderer.drawCalls).toHaveLength(16);
+  });
+
+  it('ignores unchanged reveal ResizeObserver and duplicate resolution deliveries', async () => {
+    const renderer = createRendererFake({ resizeResults: [true, false, false, false] });
+    const harness = createHarness({ checked: true, renderers: [renderer] });
+    await harness.toggle.ready;
+    expect(renderer.drawCalls).toHaveLength(1);
+    expect(harness.raf.pending).toBe(1);
+    harness.resize();
+    harness.emitResolutionChange();
+    harness.emitResolutionChange();
+    expect(renderer.resizeCalls).toHaveLength(4);
+    expect(renderer.drawCalls).toHaveLength(1);
+    expect(harness.raf.pending).toBe(1);
     expect(harness.raf.flushAll()).toBe(15);
     expect(renderer.drawCalls).toHaveLength(16);
   });
@@ -479,7 +500,7 @@ describe('createJellyToggle3D', () => {
   it('keeps recovery hidden and seeds the latest state before revealing after device loss', async () => {
     const first = createRendererFake();
     const deferred = createDeferred<JellyRenderer>();
-    const recovered = createRendererFake();
+    const recovered = createRendererFake({ resizeResults: [true, false] });
     const harness = createHarness({ renderers: [first, deferred.promise] });
     await harness.toggle.ready; harness.raf.flushAll(); first.lose(); await settleMicrotasks();
     expect(harness.button.dataset.jellyToggleFallbackReason).toBe('device-lost');
@@ -492,7 +513,10 @@ describe('createJellyToggle3D', () => {
     expect(visibility).toEqual([true]);
     expect((harness.button.querySelector('canvas') as HTMLCanvasElement).hidden).toBe(false);
     expect(harness.button.dataset.jellyToggleFallbackReason).toBeUndefined();
+    harness.resize();
+    expect(recovered.drawCalls).toHaveLength(1);
     expect(harness.raf.flushAll()).toBe(15);
+    expect(recovered.drawCalls).toHaveLength(16);
   });
 
   it('retries a device already lost while its initialization attempt is settling', async () => {

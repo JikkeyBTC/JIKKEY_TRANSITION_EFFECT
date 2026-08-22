@@ -215,7 +215,10 @@ export function createJellyToggle3DWithRuntime(
     ) return;
 
     if (finiteDpr(runtime.devicePixelRatio()) !== lastDpr) {
-      redrawInternal();
+      handleGeometryChange();
+      if (mode === 'webgpu' && !forcedColors && (!physics.snapshot.settled || taa.needsSample)) {
+        scheduleFrame();
+      }
       return;
     }
 
@@ -457,6 +460,15 @@ export function createJellyToggle3DWithRuntime(
     return attempt;
   }
 
+  const handleGeometryChange = (): void => {
+    if (destroyed || mode !== 'webgpu' || forcedColors || !renderer) return;
+    const active = renderer;
+    const generation = deviceGeneration;
+    const changed = resizeRenderer(active, generation);
+    if (mode !== 'webgpu') return;
+    if (changed) seedInvalidHistory(active, generation, false);
+  };
+
   const redrawInternal = (): void => {
     if (destroyed || mode !== 'webgpu' || forcedColors || !renderer) return;
     const active = renderer;
@@ -466,13 +478,13 @@ export function createJellyToggle3DWithRuntime(
     seedInvalidHistory(active, generation, false);
   };
 
-  const resizeObserver = runtime.createResizeObserver(() => redrawInternal());
+  const resizeObserver = runtime.createResizeObserver(() => handleGeometryChange());
   try {
     resizeObserver.observe(canvas, { box: 'device-pixel-content-box' });
   } catch {
     resizeObserver.observe(canvas);
   }
-  runtime.observeResolutionChanges(redrawInternal, abortController.signal);
+  runtime.observeResolutionChanges(handleGeometryChange, abortController.signal);
 
   const api: JellyToggle3D = {
     ready,
