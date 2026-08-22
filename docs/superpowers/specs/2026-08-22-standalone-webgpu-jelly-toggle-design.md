@@ -1,7 +1,7 @@
 # Standalone WebGPU Jelly On/Off Toggle Design
 
 - Date: 2026-08-22
-- Status: 대화상 설계 승인 완료, 저장된 명세 검토 대기
+- Status: 대화상 설계 승인 및 저장 명세 교차 검토 완료, 구현 진행
 - Reference: [WICG WebGPU jelly slider example](https://wicg.github.io/html-in-canvas/Examples/webgpu-jelly-slider/)
 - Pinned upstream revision: `d4433e329697c4341a9f915f75dbd9608f3939fa`
 - Immutable upstream source: [WICG/html-in-canvas — webgpu-jelly-slider at the pinned revision](https://github.com/WICG/html-in-canvas/tree/d4433e329697c4341a9f915f75dbd9608f3939fa/Examples/webgpu-jelly-slider)

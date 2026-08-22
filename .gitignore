@@ -6,6 +6,8 @@ playwright-report/
 docs/superpowers/**
 !docs/superpowers/specs/
 !docs/superpowers/specs/2026-08-22-standalone-webgpu-jelly-toggle-design.md
+!docs/superpowers/plans/
+!docs/superpowers/plans/2026-08-22-standalone-webgpu-jelly-toggle.md
 .superpowers/
 tests/fixtures/reference/*.png
 *.log
