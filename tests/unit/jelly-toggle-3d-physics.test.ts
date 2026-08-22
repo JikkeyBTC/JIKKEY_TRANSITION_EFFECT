@@ -199,18 +199,70 @@ function referenceTransitionSettleTicks(from: Target, to: Target): { firstQualif
   for (let tick = 1; tick <= 120; tick += 1) {
     const before = clone(state.points);
     referenceTick(state, to);
-    const qualifies = Math.abs(state.movingX - (to === 'on' ? C.onX : C.offX)) <= C.settleTargetError
-      && Math.max(...state.points.map((point, index) => Math.hypot(
-        point.x - before[index]!.x,
-        point.y - before[index]!.y,
-      ))) <= C.settleMaxPointMove
-      && maximumSegmentResidual(state.points) <= C.settleMaxSegmentResidual;
+    const qualifies = referenceSettleQualifies(before, state, to);
     if (qualifies && firstQualified === 0) firstQualified = tick;
     consecutive = qualifies ? consecutive + 1 : 0;
     if (consecutive >= C.settleTicks) return { firstQualified, settled: tick };
   }
   throw new Error(`Reference transition ${from}->${to} did not settle`);
 }
+
+function referenceSettleQualifies(
+  before: readonly Point[],
+  state: { points: Point[]; previous: Point[]; movingX: number },
+  target: Target,
+): boolean {
+  return Math.abs(state.movingX - (target === 'on' ? C.onX : C.offX)) <= C.settleTargetError
+    && Math.max(...state.points.map((point, index) => Math.hypot(
+      point.x - before[index]!.x,
+      point.y - before[index]!.y,
+    ))) <= C.settleMaxPointMove
+    && maximumSegmentResidual(state.points) <= C.settleMaxSegmentResidual;
+}
+
+function referenceReversalSettleTicks(from: Target, firstTarget: Target, reversalCount: number): number {
+  const points = clone(REFERENCE_CANONICAL[from].points);
+  const state = { points, previous: clone(points), movingX: from === 'on' ? C.onX : C.offX };
+  let target = firstTarget;
+  for (let reversal = 0; reversal < reversalCount; reversal += 1) {
+    for (let tick = 0; tick < 15; tick += 1) referenceTick(state, target);
+    target = target === 'on' ? 'off' : 'on';
+  }
+  let consecutive = 0;
+  for (let tick = 1; tick <= 120; tick += 1) {
+    const before = clone(state.points);
+    referenceTick(state, target);
+    consecutive = referenceSettleQualifies(before, state, target) ? consecutive + 1 : 0;
+    if (consecutive >= C.settleTicks) return tick;
+  }
+  throw new Error(`Reference reversal ${from}/${reversalCount} did not settle normally`);
+}
+
+const REFERENCE_REVERSAL_TIMINGS = (['off', 'on'] as const).flatMap((from) => {
+  const firstTarget: Target = from === 'off' ? 'on' : 'off';
+  return Array.from({ length: 7 }, (_, index) => ({
+    from,
+    reversalCount: index + 1,
+    settleTicks: referenceReversalSettleTicks(from, firstTarget, index + 1),
+  }));
+});
+
+const REVERSAL_SETTLE_FIXTURES = [
+  { from: 'off', reversalCount: 1, settleTicks: 94 },
+  { from: 'off', reversalCount: 2, settleTicks: 94 },
+  { from: 'off', reversalCount: 3, settleTicks: 105 },
+  { from: 'off', reversalCount: 4, settleTicks: 94 },
+  { from: 'off', reversalCount: 5, settleTicks: 113 },
+  { from: 'off', reversalCount: 6, settleTicks: 94 },
+  { from: 'off', reversalCount: 7, settleTicks: 94 },
+  { from: 'on', reversalCount: 1, settleTicks: 93 },
+  { from: 'on', reversalCount: 2, settleTicks: 113 },
+  { from: 'on', reversalCount: 3, settleTicks: 94 },
+  { from: 'on', reversalCount: 4, settleTicks: 98 },
+  { from: 'on', reversalCount: 5, settleTicks: 94 },
+  { from: 'on', reversalCount: 6, settleTicks: 95 },
+  { from: 'on', reversalCount: 7, settleTicks: 94 },
+] as const;
 
 const REFERENCE_PHASE_FIXTURES = referenceFirstConstraintPasses();
 
@@ -268,6 +320,10 @@ describe('pinned jelly physics', () => {
 
   it('documents the ON-to-OFF direct-settle cap ruling independently', () => {
     expect(referenceTransitionSettleTicks('on', 'off')).toEqual({ firstQualified: 106, settled: 109 });
+  });
+
+  it('locks every reversal normal-settle timing to independent literals', () => {
+    expect(REFERENCE_REVERSAL_TIMINGS).toEqual(REVERSAL_SETTLE_FIXTURES);
   });
 
   it('runs distance, bending, and end-flat constraints in 6 x 16 ordered passes', () => {
@@ -384,7 +440,10 @@ describe('pinned jelly physics', () => {
           physics.advance(1 / 60);
           ticks += 1;
         }
-        expect(ticks).toBeLessThanOrEqual(120);
+        const expected = REVERSAL_SETTLE_FIXTURES.find((fixture) =>
+          fixture.from === from && fixture.reversalCount === reversalCount)!;
+        expect(ticks).toBe(expected.settleTicks);
+        expect(physics.snapshot.snapped).toBe(false);
         expect(physics.snapshot.current).toEqual(CANONICAL_POSES[target]);
       }
     }
