@@ -1,5 +1,7 @@
 # Integrating BurnTransition
 
+This guide is for the default burn page and its optional compact Canvas 2D switch. The WebGPU control is a separate page and module; see [standalone WebGPU jelly toggle](jelly-toggle-integration.md) for its TypeGPU setup, API, fallback, and Electron route.
+
 ## 1. Main process
 
 Copy `electron/capture-types.ts` and `electron/capture-handler.ts`. Register the handler once and bind it to the trusted app window; main-frame validation alone is not an authorization boundary:
@@ -151,7 +153,9 @@ const dispose = () => burn.destroy();
 window.addEventListener('beforeunload', dispose, { once: true });
 ```
 
-### Optional compact jelly switch
+### Optional compact Canvas 2D jelly switch
+
+This section describes the default burn page's `src/jelly-toggle/` two-spring Canvas 2D decoration. It does not describe or initialize the standalone `src/jelly-toggle-3d/` WebGPU component. Use the [standalone WebGPU jelly toggle](jelly-toggle-integration.md) guide when you want the WICG-derived 3D material on its independent route.
 
 Use a real button for input and accessibility; the Canvas is decorative only:
 
