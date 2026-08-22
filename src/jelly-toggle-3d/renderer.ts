@@ -1,6 +1,6 @@
 // Direct TypeGPU renderer adaptation of WICG/html-in-canvas
 // Examples/webgpu-jelly-slider at d4433e329697c4341a9f915f75dbd9608f3939fa (MIT).
-import tgpu, { d } from 'typegpu';
+import tgpu, { d, type TgpuRoot } from 'typegpu';
 
 import { CameraController } from './camera';
 import { CANONICAL_POSES } from './physics-fixtures';
@@ -114,6 +114,7 @@ export async function createJellyRenderer(
     uncapturedErrors: 0,
   };
   const accounting: RendererResourceAccounting = {
+    submission: () => { stats.submissions += 1; },
     bufferCreated: () => { stats.buffersCreated += 1; },
     bufferDestroyed: () => { stats.buffersDestroyed += 1; },
     textureCreated: () => { stats.texturesCreated += 1; },
@@ -128,21 +129,25 @@ export async function createJellyRenderer(
   };
   device.addEventListener('uncapturederror', onUncapturedError);
 
+  let initializedRoot: TgpuRoot | undefined;
+  const initializationCleanups: Array<() => void> = [];
   try {
     const root = tgpu.initFromDevice({ device });
+    initializedRoot = root;
     const presentationFormat = gpu.getPreferredCanvasFormat();
     const context = root.configureContext({
       canvas,
       format: presentationFormat,
       alphaMode: 'premultiplied',
     });
+    initializationCleanups.push(() => context.unconfigure());
     let width = Math.min(MAX_BACKING_WIDTH, Math.max(1, canvas.width));
     let height = Math.min(MAX_BACKING_HEIGHT, Math.max(1, canvas.height));
     canvas.width = width;
     canvas.height = height;
 
     const slider = new SliderGpu(root, accounting, CANONICAL_POSES.off);
-    stats.submissions += 1;
+    initializationCleanups.push(() => slider.destroy());
     const camera = new CameraController(
       root,
       accounting,
@@ -153,6 +158,7 @@ export async function createJellyRenderer(
       width,
       height,
     );
+    initializationCleanups.push(() => camera.destroy());
     const shaders = createJellyShaders(
       root,
       slider,
@@ -161,11 +167,17 @@ export async function createJellyRenderer(
       mode,
       accounting,
     );
+    initializationCleanups.push(() => shaders.destroy());
     let colors = createColorTextures(root, width, height, accounting);
+    initializationCleanups.push(() => destroyTextureEntries(colors, accounting));
     const taa = new TaaResolver(root, width, height, accounting);
+    initializationCleanups.push(() => taa.destroy());
     let diagnostics = mode === 'diagnostic'
       ? createDiagnosticTextures(root, width, height, accounting)
       : undefined;
+    if (diagnostics) {
+      initializationCleanups.push(() => destroyTextureEntries(diagnostics!, accounting));
+    }
     let destroyed = false;
 
     const assertAlive = (stage: JellyRendererErrorStage): void => {
@@ -185,12 +197,12 @@ export async function createJellyRenderer(
       shaders.drawRaymarch(colors[currentFrame]!.sampled, diagnosticViews);
       const resolved = taa.resolve(colors[currentFrame]!.sampled, currentFrame, historyValid);
       shaders.present(resolved, context);
-      stats.submissions += 3;
     };
 
     // TypeGPU pipelines compile lazily. A bounded seed frame makes this the sole
     // pipeline generation for the device lifetime and initializes both histories.
     drawFrame(0, false);
+    initializationCleanups.length = 0;
 
     const renderer: JellyRenderer = {
       device,
@@ -202,33 +214,43 @@ export async function createJellyRenderer(
         const nextWidth = backingDimension(cssWidth, dpr, MAX_BACKING_WIDTH);
         const nextHeight = backingDimension(cssHeight, dpr, MAX_BACKING_HEIGHT);
         if (nextWidth === width && nextHeight === height) return false;
+        let nextColors: ReturnType<typeof createColorTextures> | undefined;
+        let nextDiagnostics: ReturnType<typeof createDiagnosticTextures> | undefined;
+        let taaResize: ReturnType<TaaResolver['prepareResize']> | undefined;
         try {
-          destroyTextureEntries(colors, accounting);
-          if (diagnostics) destroyTextureEntries(diagnostics, accounting);
-          width = nextWidth;
-          height = nextHeight;
-          canvas.width = width;
-          canvas.height = height;
-          camera.updateProjection(CAMERA_FOV, width, height);
-          colors = createColorTextures(root, width, height, accounting);
-          taa.resize(width, height);
-          diagnostics = mode === 'diagnostic'
-            ? createDiagnosticTextures(root, width, height, accounting)
+          nextColors = createColorTextures(root, nextWidth, nextHeight, accounting);
+          nextDiagnostics = mode === 'diagnostic'
+            ? createDiagnosticTextures(root, nextWidth, nextHeight, accounting)
             : undefined;
-          return true;
+          taaResize = taa.prepareResize(nextWidth, nextHeight);
+          camera.updateProjection(CAMERA_FOV, nextWidth, nextHeight);
         } catch (cause) {
+          taaResize?.rollback();
+          if (nextDiagnostics) destroyTextureEntries(nextDiagnostics, accounting);
+          if (nextColors) destroyTextureEntries(nextColors, accounting);
           throw rendererError('resize', 'Failed to resize jelly renderer resources', cause);
         }
+
+        const previousColors = colors;
+        const previousDiagnostics = diagnostics;
+        colors = nextColors;
+        diagnostics = nextDiagnostics;
+        taaResize.commit();
+        width = nextWidth;
+        height = nextHeight;
+        canvas.width = width;
+        canvas.height = height;
+        destroyTextureEntries(previousColors, accounting);
+        if (previousDiagnostics) destroyTextureEntries(previousDiagnostics, accounting);
+        return true;
       },
 
       setPose(points: readonly Point2[], discontinuous: boolean): void {
         assertAlive('upload');
         try {
           slider.setPose(points);
-          stats.submissions += 1;
           if (discontinuous) {
             taa.resetHistory();
-            stats.submissions += 2;
           }
         } catch (cause) {
           throw rendererError('upload', 'Failed to upload the jelly pose', cause);
@@ -248,7 +270,6 @@ export async function createJellyRenderer(
         assertAlive('draw');
         try {
           taa.resetHistory();
-          stats.submissions += 2;
         } catch (cause) {
           throw rendererError('draw', 'Failed to reset TAA histories', cause);
         }
@@ -287,7 +308,23 @@ export async function createJellyRenderer(
     return renderer;
   } catch (cause) {
     device.removeEventListener('uncapturederror', onUncapturedError);
-    device.destroy();
+    for (let index = initializationCleanups.length - 1; index >= 0; index -= 1) {
+      try {
+        initializationCleanups[index]!();
+      } catch {
+        // Preserve the original initialization failure while continuing cleanup.
+      }
+    }
+    try {
+      initializedRoot?.destroy();
+    } catch {
+      // Keep unwinding the failed device generation.
+    }
+    try {
+      device.destroy();
+    } catch {
+      // Preserve the original initialization error.
+    }
     throw rendererError('initialization', 'Failed to initialize the jelly renderer', cause);
   }
 }

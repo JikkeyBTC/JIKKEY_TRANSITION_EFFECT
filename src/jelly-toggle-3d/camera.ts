@@ -82,13 +82,14 @@ export class CameraController {
   }
 
   updateProjection(fov: number, width: number, height: number, near = 0.1, far = 100): void {
+    const nextProjection = m.mat4.perspective(fov, width / height, near, far, d.mat4x4f());
+    this.#uniform.writePartial({
+      proj: nextProjection,
+      projInv: m.mat4.invert(nextProjection, d.mat4x4f()),
+    });
     this.#width = width;
     this.#height = height;
-    this.#baseProj = m.mat4.perspective(fov, width / height, near, far, d.mat4x4f());
-    this.#uniform.writePartial({
-      proj: this.#baseProj,
-      projInv: m.mat4.invert(this.#baseProj, d.mat4x4f()),
-    });
+    this.#baseProj = nextProjection;
   }
 
   get cameraUniform(): TgpuUniform<typeof Camera> {

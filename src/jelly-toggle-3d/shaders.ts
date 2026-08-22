@@ -746,10 +746,12 @@ const fragmentMain = tgpu.fragmentFn({
             },
           })
           .draw(3);
+        accounting.submission();
       } else {
         productionRayMarchPipeline!
           .withColorAttachment({ view: colorView, loadOp: 'clear', storeOp: 'store' })
           .draw(3);
+        accounting.submission();
       }
     },
 
@@ -761,6 +763,7 @@ const fragmentMain = tgpu.fragmentFn({
         .withColorAttachment({ view: context, loadOp: 'clear', storeOp: 'store' })
         .with(root.createBindGroup(sampleLayout, { currentTexture }))
         .draw(3);
+      accounting.submission();
     },
 
     setRandomSeed(index: number): void {

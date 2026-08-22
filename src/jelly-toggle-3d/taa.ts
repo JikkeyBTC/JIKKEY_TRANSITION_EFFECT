@@ -4,6 +4,11 @@ import type { TgpuComputePipeline, TgpuRoot, TgpuTextureView } from 'typegpu';
 import tgpu, { d, std } from 'typegpu';
 
 import { taaResolveLayout } from './data-types';
+import {
+  createTextureBundle,
+  destroyTextureEntries,
+  type RendererResourceAccounting,
+} from './utils';
 
 const STATIONARY_SAMPLE_COUNT = 16;
 const HISTORY_BLEND = 0.9;
@@ -49,10 +54,10 @@ export function createTaaState(): TaaState {
   };
 }
 
-export interface TaaResourceAccounting {
-  textureCreated(): void;
-  textureDestroyed(): void;
-}
+export type TaaResourceAccounting = Pick<
+  RendererResourceAccounting,
+  'submission' | 'textureCreated' | 'textureDestroyed'
+>;
 
 export const taaResolveFn = tgpu.computeFn({
   workgroupSize: [16, 16],
@@ -96,17 +101,24 @@ function createTaaTextures(
   height: number,
   accounting: TaaResourceAccounting,
 ) {
-  return [0, 1].map(() => {
-    const texture = root['~unstable']
+  return createTextureBundle(
+    root,
+    2,
+    accounting,
+    () => root['~unstable']
       .createTexture({ size: [width, height], format: 'rgba8unorm' })
-      .$usage('storage', 'sampled');
-    accounting.textureCreated();
-    return {
+      .$usage('storage', 'sampled'),
+    (texture) => ({
       texture,
       write: texture.createView(d.textureStorage2d('rgba8unorm', 'write-only')),
       sampled: texture.createView(),
-    };
-  });
+    }),
+  );
+}
+
+export interface TaaResizeTransaction {
+  commit(): void;
+  rollback(): void;
 }
 
 export class TaaResolver {
@@ -137,24 +149,59 @@ export class TaaResolver {
     currentFrame: number,
     historyValid: boolean,
   ): TgpuTextureView<d.WgslTexture2d<d.F32>> {
-    const previousFrame = 1 - currentFrame;
     const current = this.#textures[currentFrame]!;
+    if (!historyValid) {
+      for (const history of this.#textures) {
+        this.#dispatch(currentTexture, currentTexture, history.write);
+      }
+      return current.sampled;
+    }
+
+    const previousFrame = 1 - currentFrame;
     const history = this.#textures[previousFrame]!;
-    this.#pipeline
-      .with(this.#root.createBindGroup(taaResolveLayout, {
-        currentTexture,
-        historyTexture: historyValid ? history.sampled : currentTexture,
-        outputTexture: current.write,
-      }))
-      .dispatchWorkgroups(Math.ceil(this.#width / 16), Math.ceil(this.#height / 16));
+    this.#dispatch(currentTexture, history.sampled, current.write);
     return current.sampled;
   }
 
+  prepareResize(width: number, height: number): TaaResizeTransaction {
+    if (this.#destroyed) throw new Error('Cannot resize a destroyed TAA resolver');
+    const replacement = createTaaTextures(this.#root, width, height, this.#accounting);
+    let pending = true;
+    return {
+      commit: (): void => {
+        if (!pending) return;
+        pending = false;
+        const previous = this.#textures;
+        this.#textures = replacement;
+        this.#width = width;
+        this.#height = height;
+        this.#destroyTextures(previous);
+      },
+      rollback: (): void => {
+        if (!pending) return;
+        pending = false;
+        this.#destroyTextures(replacement);
+      },
+    };
+  }
+
   resize(width: number, height: number): void {
-    this.#destroyTextures();
-    this.#width = width;
-    this.#height = height;
-    this.#textures = createTaaTextures(this.#root, width, height, this.#accounting);
+    this.prepareResize(width, height).commit();
+  }
+
+  #dispatch(
+    currentTexture: TgpuTextureView<d.WgslTexture2d<d.F32>>,
+    historyTexture: TgpuTextureView<d.WgslTexture2d<d.F32>>,
+    outputTexture: TgpuTextureView<d.WgslStorageTexture2d<'rgba8unorm'>>,
+  ): void {
+    this.#pipeline
+      .with(this.#root.createBindGroup(taaResolveLayout, {
+        currentTexture,
+        historyTexture,
+        outputTexture,
+      }))
+      .dispatchWorkgroups(Math.ceil(this.#width / 16), Math.ceil(this.#height / 16));
+    this.#accounting.submission();
   }
 
   getResolvedTexture(frame: number): TgpuTextureView<d.WgslTexture2d<d.F32>> {
@@ -168,14 +215,14 @@ export class TaaResolver {
   destroy(): void {
     if (this.#destroyed) return;
     this.#destroyed = true;
-    this.#destroyTextures();
+    this.#destroyTextures(this.#textures);
+    this.#textures = [];
   }
 
-  #destroyTextures(): void {
-    for (const entry of this.#textures) {
-      entry.texture.destroy();
-      this.#accounting.textureDestroyed();
-    }
-    this.#textures = [];
+  #destroyTextures(textures: ReturnType<typeof createTaaTextures>): void {
+    destroyTextureEntries(
+      textures,
+      this.#accounting,
+    );
   }
 }

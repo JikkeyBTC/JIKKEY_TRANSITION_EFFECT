@@ -173,6 +173,7 @@ export class SliderGpu {
     const last = this.#points[JELLY.pointCount - 1]!;
     this.endCapUniform.write(d.vec4f(secondLast.x, secondLast.y, last.x, last.y));
     this.#computeBezierPipeline.dispatchThreads(...BEZIER_TEXTURE_SIZE);
+    this.#accounting.submission();
   }
 
   destroy(): void {

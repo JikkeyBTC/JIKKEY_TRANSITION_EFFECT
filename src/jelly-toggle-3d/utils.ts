@@ -1,15 +1,52 @@
 // Derived from WICG/html-in-canvas Examples/webgpu-jelly-slider/src/utils.ts
 // at d4433e329697c4341a9f915f75dbd9608f3939fa (MIT).
-import type { TgpuRoot } from 'typegpu';
+import type { TgpuRoot, TgpuTexture } from 'typegpu';
 import { d, std } from 'typegpu';
 
 import { BoxIntersection } from './data-types';
 
-export interface RendererResourceAccounting {
-  bufferCreated(): void;
-  bufferDestroyed(): void;
+export interface TextureResourceAccounting {
   textureCreated(): void;
   textureDestroyed(): void;
+}
+
+export interface RendererResourceAccounting extends TextureResourceAccounting {
+  submission(): void;
+  bufferCreated(): void;
+  bufferDestroyed(): void;
+}
+
+export function createTextureBundle<
+  TTexture extends TgpuTexture,
+  TEntry extends { texture: TTexture },
+>(
+  root: TgpuRoot,
+  count: number,
+  accounting: TextureResourceAccounting,
+  createTexture: (index: number) => TTexture,
+  createEntry: (texture: TTexture, index: number) => TEntry,
+): TEntry[] {
+  const entries: TEntry[] = [];
+  try {
+    for (let index = 0; index < count; index += 1) {
+      const texture = createTexture(index);
+      accounting.textureCreated();
+      try {
+        // TypeGPU textures are lazy. Materializing here makes allocation part
+        // of the transaction instead of deferring failure until the next draw.
+        root.unwrap(texture);
+        entries.push(createEntry(texture, index));
+      } catch (cause) {
+        texture.destroy();
+        accounting.textureDestroyed();
+        throw cause;
+      }
+    }
+    return entries;
+  } catch (cause) {
+    destroyTextureEntries(entries, accounting);
+    throw cause;
+  }
 }
 
 export const fresnelSchlick = (cosTheta: number, ior1: number, ior2: number) => {
@@ -50,17 +87,19 @@ export function createColorTextures(
   height: number,
   accounting: RendererResourceAccounting,
 ) {
-  return [0, 1].map(() => {
-    const texture = root['~unstable']
+  return createTextureBundle(
+    root,
+    2,
+    accounting,
+    () => root['~unstable']
       .createTexture({ size: [width, height], format: 'rgba8unorm' })
-      .$usage('storage', 'sampled', 'render');
-    accounting.textureCreated();
-    return {
+      .$usage('storage', 'sampled', 'render'),
+    (texture) => ({
       texture,
       write: texture.createView(d.textureStorage2d('rgba8unorm', 'write-only')),
       sampled: texture.createView(),
-    };
-  });
+    }),
+  );
 }
 
 export function createDiagnosticTextures(
@@ -69,21 +108,23 @@ export function createDiagnosticTextures(
   height: number,
   accounting: RendererResourceAccounting,
 ) {
-  return [0, 1].map(() => {
-    const texture = root['~unstable']
+  return createTextureBundle(
+    root,
+    2,
+    accounting,
+    () => root['~unstable']
       .createTexture({ size: [width, height], format: 'rgba16float' })
-      .$usage('render');
-    accounting.textureCreated();
-    return {
+      .$usage('render'),
+    (texture) => ({
       texture,
       render: texture.createView('render'),
-    };
-  });
+    }),
+  );
 }
 
 export function destroyTextureEntries(
   entries: readonly { texture: { destroy(): void } }[],
-  accounting: RendererResourceAccounting,
+  accounting: TextureResourceAccounting,
 ): void {
   for (const entry of entries) {
     entry.texture.destroy();

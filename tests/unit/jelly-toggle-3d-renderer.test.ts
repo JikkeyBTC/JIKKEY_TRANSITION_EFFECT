@@ -83,7 +83,10 @@ interface FakeGpuHarness {
   readonly pipelineCount: number;
   readonly submissions: number;
   readonly configuredFormat: GPUTextureFormat | undefined;
+  readonly deviceDestroyCount: number;
+  readonly contextUnconfigureCount: number;
   failNextWrite: boolean;
+  failTextureCreationIn: number | undefined;
   emitUncaptured(error: Error): void;
 }
 
@@ -104,6 +107,8 @@ function createFakeGpu(): FakeGpuHarness {
   let configuredFormat: GPUTextureFormat | undefined;
   let destroyedBuffers = 0;
   let destroyedTextures = 0;
+  let deviceDestroyCount = 0;
+  let contextUnconfigureCount = 0;
 
   const pass = {
     setPipeline: () => undefined,
@@ -166,6 +171,13 @@ function createFakeGpu(): FakeGpuHarness {
       return buffer;
     },
     createTexture: (descriptor: GPUTextureDescriptor) => {
+      if (harness.failTextureCreationIn !== undefined) {
+        if (harness.failTextureCreationIn === 0) {
+          harness.failTextureCreationIn = undefined;
+          throw new Error('synthetic texture allocation failure');
+        }
+        harness.failTextureCreationIn -= 1;
+      }
       const texture = new FakeTexture(descriptor, () => { destroyedTextures += 1; });
       textures.push(texture);
       return texture;
@@ -201,7 +213,7 @@ function createFakeGpu(): FakeGpuHarness {
       copyTextureToTexture: () => undefined,
       finish: () => ({}),
     }),
-    destroy: () => undefined,
+    destroy: () => { deviceDestroyCount += 1; },
     pushErrorScope: () => undefined,
     popErrorScope: async () => null,
   } as unknown as GPUDevice;
@@ -215,7 +227,7 @@ function createFakeGpu(): FakeGpuHarness {
     configure: (configuration: GPUCanvasConfiguration) => {
       configuredFormat = configuration.format;
     },
-    unconfigure: () => undefined,
+    unconfigure: () => { contextUnconfigureCount += 1; },
     getCurrentTexture: () => swapchainTexture as unknown as GPUTexture,
   } as unknown as GPUCanvasContext;
 
@@ -228,7 +240,10 @@ function createFakeGpu(): FakeGpuHarness {
     get pipelineCount() { return pipelineCount; },
     get submissions() { return submissions; },
     get configuredFormat() { return configuredFormat; },
+    get deviceDestroyCount() { return deviceDestroyCount; },
+    get contextUnconfigureCount() { return contextUnconfigureCount; },
     failNextWrite: false,
+    failTextureCreationIn: undefined,
     emitUncaptured(error: Error) {
       const event = { type: 'uncapturederror', error } as unknown as GPUUncapturedErrorEvent;
       for (const listener of listeners) listener(event);
@@ -360,6 +375,77 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
     expect(() => renderer.setPose(CANONICAL_POSES.on, false)).toThrow(JellyRendererError);
 
     renderer.destroy();
+  });
+
+  it('reports only actual GPU queue submissions', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+    const renderer = await createJellyRenderer(canvas);
+
+    renderer.resetHistory();
+    expect(renderer.stats.submissions).toBe(fake.submissions);
+
+    renderer.setPose(CANONICAL_POSES.on, true);
+    expect(renderer.stats.submissions).toBe(fake.submissions);
+    renderer.destroy();
+  });
+
+  it.each([
+    { failureOffset: 1, location: 'inside a replacement bundle' },
+    { failureOffset: 4, location: 'after earlier replacement bundles' },
+  ])('preserves live resize resources when allocation fails $location', async ({
+    failureOffset,
+  }) => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+    const renderer = await createJellyRenderer(canvas, 'diagnostic');
+    const oldTextures = fake.textures.filter((texture) => !texture.destroyed);
+    const textureCountBefore = fake.textures.length;
+    const activeOwnedBefore = renderer.stats.texturesCreated - renderer.stats.texturesDestroyed;
+    fake.failTextureCreationIn = failureOffset;
+
+    expect(() => renderer.resize(96, 52, 2)).toThrow(JellyRendererError);
+
+    const partialReplacements = fake.textures.slice(textureCountBefore);
+    expect(partialReplacements.length).toBeGreaterThan(0);
+    expect(partialReplacements.every((texture) => texture.destroyed)).toBe(true);
+    expect(oldTextures.every((texture) => !texture.destroyed)).toBe(true);
+    expect(canvas.width).toBe(88);
+    expect(canvas.height).toBe(44);
+    expect(renderer.stats.texturesCreated - renderer.stats.texturesDestroyed).toBe(
+      activeOwnedBefore,
+    );
+
+    expect(renderer.resize(96, 52, 2)).toBe(true);
+    renderer.destroy();
+    expect(renderer.stats.texturesDestroyed).toBe(renderer.stats.texturesCreated);
+    expect(fake.textures.every((texture) => texture.destroyed)).toBe(true);
+  });
+
+  it('cleans all initialized resources when renderer creation fails', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 88;
+    canvas.height = 44;
+    installGpu(canvas, fake);
+    fake.failTextureCreationIn = 2;
+
+    await expect(createJellyRenderer(canvas, 'diagnostic')).rejects.toBeInstanceOf(
+      JellyRendererError,
+    );
+
+    expect(fake.buffers.length).toBeGreaterThan(0);
+    expect(fake.textures.length).toBeGreaterThan(0);
+    expect(fake.buffers.every((buffer) => buffer.destroyed)).toBe(true);
+    expect(fake.textures.every((texture) => texture.destroyed)).toBe(true);
+    expect(fake.contextUnconfigureCount).toBe(1);
+    expect(fake.deviceDestroyCount).toBe(1);
   });
 
   it('pins the TypeGPU metadata format dependency to the verified upstream resolution', () => {
