@@ -4,8 +4,17 @@ import tgpu, { d, type TgpuRoot } from 'typegpu';
 
 import { CameraController } from './camera';
 import { CANONICAL_POSES } from './physics-fixtures';
+import {
+  JELLY_ON_COLOR,
+  jellyColorForEndpoint,
+  type JellyColor,
+} from './palette';
 import type { Point2 } from './physics';
-import { createJellyShaders, type DiagnosticRenderViews } from './shaders';
+import {
+  createJellyShaders,
+  type DiagnosticRenderViews,
+  type JellyBackgroundMode,
+} from './shaders';
 import { SliderGpu } from './slider-gpu';
 import { TaaResolver } from './taa';
 import {
@@ -147,6 +156,8 @@ export async function createJellyRenderer(
   canvas: HTMLCanvasElement,
   mode: JellyRendererMode = 'production',
   randomSource: () => number = Math.random,
+  activeColor: JellyColor = JELLY_ON_COLOR,
+  backgroundMode: JellyBackgroundMode = 'transparent',
 ): Promise<JellyRenderer> {
   const gpu = navigator.gpu;
   if (!gpu) throw new JellyRendererError('initialization', 'WebGPU is unavailable');
@@ -218,6 +229,7 @@ export async function createJellyRenderer(
       presentationFormat,
       mode,
       accounting,
+      backgroundMode,
     );
     initializationCleanups.push(() => shaders.destroy());
     let colors = createColorTextures(root, width, height, accounting);
@@ -305,6 +317,9 @@ export async function createJellyRenderer(
         assertAlive('upload');
         try {
           slider.setPose(points);
+          const endpoint = points.at(-1);
+          if (!endpoint) throw new Error('The jelly pose has no endpoint');
+          shaders.setJellyColor(jellyColorForEndpoint(endpoint.x, activeColor));
           if (discontinuous) {
             taa.resetHistory();
           }

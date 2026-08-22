@@ -72,6 +72,8 @@ export const taaResolveFn = tgpu.computeFn({
   const historyColor = std.textureLoad(taaResolveLayout.$.historyTexture, d.vec2u(gid.xy), 0);
   let minColor = d.vec3f(9999.0);
   let maxColor = d.vec3f(-9999.0);
+  let minAlpha = d.f32(9999.0);
+  let maxAlpha = d.f32(-9999.0);
 
   for (const x of tgpu.unroll([-1, 0, 1])) {
     for (const y of tgpu.unroll([-1, 0, 1])) {
@@ -84,13 +86,16 @@ export const taaResolveFn = tgpu.computeFn({
       const neighborColor = std.textureLoad(taaResolveLayout.$.currentTexture, clampedCoord, 0);
       minColor = std.min(minColor, neighborColor.rgb);
       maxColor = std.max(maxColor, neighborColor.rgb);
+      minAlpha = std.min(minAlpha, neighborColor.a);
+      maxAlpha = std.max(maxAlpha, neighborColor.a);
     }
   }
 
   const historyColorClamped = std.clamp(historyColor.rgb, minColor, maxColor);
+  const historyAlphaClamped = std.clamp(historyColor.a, minAlpha, maxAlpha);
   const resolvedColor = d.vec4f(
     std.mix(currentColor.rgb, historyColorClamped, HISTORY_BLEND),
-    1.0,
+    std.mix(currentColor.a, historyAlphaClamped, HISTORY_BLEND),
   );
   std.textureStore(taaResolveLayout.$.outputTexture, d.vec2u(gid.xy), resolvedColor);
 });

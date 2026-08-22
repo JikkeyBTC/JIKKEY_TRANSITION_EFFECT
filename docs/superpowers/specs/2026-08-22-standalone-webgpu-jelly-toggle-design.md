@@ -13,7 +13,7 @@
 최종 형태는 연속 값을 선택하는 range slider가 아니라 두 상태만 갖는 On/Off 토글이다. 시각 구조는 승인된 **A안, Anchored Bridge**를 사용한다.
 
 - OFF: 왼쪽에 고정된 젤리가 원본 slider의 최소 위치까지 압축되어 둥글게 솟는다.
-- ON: 왼쪽 anchor에서 오른쪽 head까지 반투명 오렌지 젤리가 길게 연결된다.
+- ON: 왼쪽 anchor에서 오른쪽 head까지 반투명 초록 젤리가 길게 연결된다.
 - 전환 중: 17개 점의 원본 Verlet/PBD 체인이 압축, arch, stretch, overshoot를 만든다.
 - 입력은 click, Space, Enter뿐이며 drag와 중간 값은 제공하지 않는다.
 
@@ -204,7 +204,7 @@ declare function createJellyToggle3D(options: JellyToggle3DOptions): JellyToggle
 - AO steps/radius/intensity/bias `3 / 0.1 / 0.5 / 0.005`
 - specular power/intensity `10 / 0.6`
 - directional light `normalize(0.19, -0.24, 0.75)`
-- 오렌지 jelly color `(1.0, 0.45, 0.075, 1.0)`
+- OFF jelly color `(1.0, 0.45, 0.075, 1.0)`에서 ON `#22c55e`로 endpoint 위치에 맞춰 선형 보간한다. 독립 데모의 주변 gradient는 예시 페이지 전용이며 재사용 button/canvas에는 배경 box가 없다.
 - camera position/target/up/FOV `(0, 2.7, 1.9) / (0, 0, 0) / +Y / π/4`
 - premultiplied-alpha presentation
 - ground plane, soft shadow, caustic

@@ -90,7 +90,7 @@ pnpm benchmark:jelly
 - procedural char, ember, heat, glow, smoke, firelight, and sparse sparks
 - texture cleanup on completion and every fallback path
 
-The standalone page instead uses a standard WebGPU canvas, TypeGPU compute/render pipelines, SDF raymarching, temporal antialiasing, bounded DPR, and idle-on-settle scheduling. Its guide documents fallback and resource ownership.
+The standalone page instead uses a transparent standard WebGPU canvas, TypeGPU compute/render pipelines, SDF raymarching, temporal antialiasing, bounded DPR, and idle-on-settle scheduling. Its surrounding gradient is demo-only; the portable button adds no background panel. The jelly transitions from reference orange at OFF to green at ON. Its guide documents fallback and resource ownership.
 
 ## Optional reference observation
 

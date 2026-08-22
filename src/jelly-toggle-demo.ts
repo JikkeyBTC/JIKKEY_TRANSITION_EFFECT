@@ -29,6 +29,7 @@ import {
 import { createTaaState } from './jelly-toggle-3d/taa';
 import { createTestRendererOwner } from './jelly-toggle-3d/test-renderer-owner';
 import { assertJellyFixtureSurface } from './jelly-toggle-3d/fixture-environment';
+import { JELLY_OFF_COLOR } from './jelly-toggle-3d/palette';
 import {
   createXorshift32,
   JELLY_FIXTURE_RANDOM_SEED,
@@ -311,6 +312,8 @@ const runtime: JellyToggleRuntime = {
       canvas,
       diagnosticMode ? 'diagnostic' : 'production',
       fixtureRandom,
+      fixtureCaptureMode ? JELLY_OFF_COLOR : undefined,
+      fixtureCaptureMode ? 'reference-opaque' : 'transparent',
     ));
     if (fixtureRandom) fixtureRandomSources.set(renderer, fixtureRandom);
     renderers.push(renderer);

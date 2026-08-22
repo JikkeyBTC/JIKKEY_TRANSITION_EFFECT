@@ -171,9 +171,15 @@ test('keeps a functional CSS switch when navigator.gpu is hidden', async () => {
     expect(await page.evaluate(() => navigator.gpu)).toBeUndefined();
     expect(await page.evaluate(() => window.__jellyTest!.readyState())).toBe('fallback');
     const toggle = page.getByRole('switch', { name: 'Jelly toggle' });
-    await expect(toggle.locator('.jelly-toggle-3d__fallback')).toBeVisible();
+    const fallback = toggle.locator('.jelly-toggle-3d__fallback');
+    await expect(fallback).toBeVisible();
+    await expect(toggle).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
+    await expect(fallback).toHaveCSS('color', 'rgb(34, 197, 94)');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-checked', 'false');
+    await expect(fallback).not.toHaveCSS('color', 'rgb(34, 197, 94)');
   } finally {
     await app.close();
   }

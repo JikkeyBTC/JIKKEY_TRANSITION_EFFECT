@@ -378,6 +378,52 @@ afterEach(() => {
 });
 
 describe('jelly toggle WebGPU renderer resource contract', () => {
+  it('interpolates the jelly material from orange OFF to green ON without recreating pipelines', async () => {
+    const fake = createFakeGpu();
+    const canvas = document.createElement('canvas');
+    canvas.width = 176;
+    canvas.height = 88;
+    installGpu(canvas, fake);
+    const activeColor = [34 / 255, 197 / 255, 94 / 255, 1] as const;
+    const inactiveColor = [1, 0.45, 0.075, 1] as const;
+
+    const renderer = await createJellyRenderer(canvas, 'production', () => 0.5, activeColor);
+    const pipelineCount = fake.pipelineCount;
+    renderer.setPose(CANONICAL_POSES.on, false);
+
+    const materialBuffer = fake.buffers.find((buffer) => {
+      if (buffer.bytes.byteLength !== 16) return false;
+      const values = new Float32Array(buffer.bytes.buffer, buffer.bytes.byteOffset, 4);
+      return activeColor.every((value, index) => Math.abs((values[index] ?? 0) - value) < 1e-6);
+    });
+    expect(materialBuffer).toBeDefined();
+
+    const midpoint: Array<{ x: number; y: number }> = CANONICAL_POSES.on.map((point) => ({ ...point }));
+    midpoint[midpoint.length - 1] = { x: 0.3, y: 0.05 };
+    renderer.setPose(midpoint, false);
+    const midpointValues = Array.from(new Float32Array(
+      materialBuffer!.bytes.buffer,
+      materialBuffer!.bytes.byteOffset,
+      4,
+    ));
+    expect(midpointValues).toEqual(expect.arrayContaining([
+      expect.closeTo((inactiveColor[0] + activeColor[0]) / 2, 5),
+      expect.closeTo((inactiveColor[1] + activeColor[1]) / 2, 5),
+      expect.closeTo((inactiveColor[2] + activeColor[2]) / 2, 5),
+      1,
+    ]));
+
+    renderer.setPose(CANONICAL_POSES.off, false);
+    const offValues = new Float32Array(
+      materialBuffer!.bytes.buffer,
+      materialBuffer!.bytes.byteOffset,
+      4,
+    );
+    inactiveColor.forEach((value, index) => expect(offValues[index]).toBeCloseTo(value, 6));
+    expect(fake.pipelineCount).toBe(pipelineCount);
+    renderer.destroy();
+  });
+
   it('consumes exactly two injected random samples for every upstream scene draw', async () => {
     const fake = createFakeGpu();
     const canvas = document.createElement('canvas');
@@ -465,7 +511,6 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
       'var jelly = ((reflection * F) + (refractedColor * (1f - F)))',
       'var finalJelly = mix(background.color.rgb, jelly, jellyColorUniform.w)',
       'var sample_1 = rayMarchCore(ray.origin, ray.direction, _arg_0.uv)',
-      'return vec4f(tanh((sample_1.color.rgb * 1.3f)), 1f)',
     ];
     let previous = -1;
     for (const token of orderedTokens) {
@@ -473,6 +518,13 @@ describe('jelly toggle WebGPU renderer resource contract', () => {
       expect(next, `missing or reordered production token: ${token}`).toBeGreaterThan(previous);
       previous = next;
     }
+    const transparentOutputLines = productionShader!.split('\n').filter((line) => (
+      line.includes('sample_1.hit') || line.includes('var color')
+    ));
+    expect(transparentOutputLines).toEqual([
+      '  var color = tanh((sample_1.color.rgb * 1.3f));',
+      '    return vec4f((color * sample_1.hit), sample_1.hit);',
+    ]);
     renderer.destroy();
   });
 

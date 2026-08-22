@@ -2,6 +2,8 @@
 
 This guide covers the reusable `src/jelly-toggle-3d/` component and the standalone `/jelly-toggle.html` Electron page. It does not replace the default burn page's compact Canvas 2D theme switch. The default page remains a WebGL2 burn-transition demo; the standalone page renders the anchored-bridge jelly material with standard WebGPU through TypeGPU.
 
+The gradient surrounding the standalone example belongs only to the demo page. The reusable control is the transparent native button plus the canvas and fallback span created inside it, so copying the component does not add a panel or background box to the host app.
+
 ## 1. Requirements and dependencies
 
 The primary visual path requires a browser or Electron release with standard WebGPU enabled in a secure context. Feature detection starts at `navigator.gpu`; a standard canvas host exposes `canvas.getContext('webgpu')`. When either WebGPU or a usable adapter/device is unavailable, the component remains an accessible switch and displays its CSS fallback.
@@ -127,6 +129,7 @@ declare function createJellyToggle3D(options: JellyToggle3DOptions): JellyToggle
 ## 4. Accessibility
 
 - The reusable component default remains 96 × 52 CSS pixels with an 88 × 44 canvas. The standalone demo scales that host to 192 × 104 and its visible canvas to 176 × 88, while retaining `pointer-events: none` on the canvas.
+- The OFF material keeps the reference orange. As the endpoint moves toward ON, the material interpolates to `#22c55e`; the CSS fallback uses the same green ON state and defers to system colors in forced-colors mode.
 - The factory sets `type="button"`, `role="switch"`, and `aria-checked`. It removes `aria-pressed` so the control exposes one state model.
 - The accessible name stays fixed. `label` wins, followed by an existing `aria-label`, then `Jelly toggle`.
 - Native button click activation supplies mouse, Space, and Enter behavior. Do not add a duplicate keyboard handler.

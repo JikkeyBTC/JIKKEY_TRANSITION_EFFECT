@@ -55,6 +55,10 @@
   transform: translateX(24px);
 }
 
+.jelly-toggle-3d[aria-checked='true'] .jelly-toggle-3d__fallback {
+  color: #22c55e;
+}
+
 .jelly-toggle-3d__canvas[hidden],
 .jelly-toggle-3d__fallback[hidden] {
   display: none;
@@ -78,6 +82,7 @@
 
   .jelly-toggle-3d__fallback:not([hidden]) {
     display: block;
+    color: CanvasText;
     forced-color-adjust: auto;
   }
 }

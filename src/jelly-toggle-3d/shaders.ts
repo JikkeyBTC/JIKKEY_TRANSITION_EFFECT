@@ -20,6 +20,7 @@ import {
   SdfBbox,
 } from './data-types';
 import { SliderGpu } from './slider-gpu';
+import { JELLY_OFF_COLOR, type JellyColor } from './palette';
 import {
   beerLambert,
   fresnelSchlick,
@@ -47,7 +48,7 @@ export const MATERIAL = Object.freeze({
   aoBias: 0.005,
   specularPower: 10,
   specularIntensity: 0.6,
-  jellyColor: [1, 0.45, 0.075, 1] as const,
+  jellyColor: JELLY_OFF_COLOR,
   lightDirection: [0.19, -0.24, 0.75] as const,
 });
 
@@ -78,6 +79,8 @@ export interface DiagnosticRenderViews {
   readonly diagnosticB: ColorAttachment['view'];
 }
 
+export type JellyBackgroundMode = 'transparent' | 'reference-opaque';
+
 export function createJellyShaders(
   root: TgpuRoot,
   slider: SliderGpu,
@@ -85,6 +88,7 @@ export function createJellyShaders(
   presentationFormat: GPUTextureFormat,
   mode: 'production' | 'diagnostic',
   accounting: RendererResourceAccounting,
+  backgroundMode: JellyBackgroundMode,
 ) {
   const bezierTexture = slider.bezierTexture.createView();
   const bezierBbox = slider.bbox;
@@ -770,7 +774,11 @@ const raymarchFn = tgpu.fragmentFn({
   const ray = getRay(ndc);
 
   const sample = rayMarchCore(ray.origin, ray.direction, uv);
-  return d.vec4f(std.tanh(sample.color.rgb.mul(1.3)), 1);
+  const color = std.tanh(sample.color.rgb.mul(1.3));
+  if (backgroundMode === 'transparent') {
+    return d.vec4f(color.mul(sample.hit), sample.hit);
+  }
+  return d.vec4f(color, 1);
 });
 
 const fragmentMain = tgpu.fragmentFn({
@@ -885,6 +893,10 @@ const fragmentMain = tgpu.fragmentFn({
 
     setRandomSeed(first: number, second: number): void {
       randomUniform.write(d.vec2f((first - 0.5) * 2, (second - 0.5) * 2));
+    },
+
+    setJellyColor(color: JellyColor): void {
+      jellyColorUniform.write(d.vec4f(color[0], color[1], color[2], color[3]));
     },
 
     destroy(): void {
