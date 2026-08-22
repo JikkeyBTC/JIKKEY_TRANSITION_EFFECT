@@ -457,3 +457,16 @@ test('reuses renderer resources across repeated alternating round trips', async 
     await app.close();
   }
 });
+
+test('keeps the default launch on the burn renderer with its capture bridge', async () => {
+  const { app, page } = await launchDemo();
+  try {
+    expect(new URL(page.url()).pathname).toMatch(/\/index\.html$|\/$/);
+    expect(await page.evaluate(() => typeof window.burnCapture?.captureViewport)).toBe('function');
+    expect(await page.evaluate(() => typeof window.__burnTest?.step)).toBe('function');
+    await expect(page.locator('[data-theme-toggle]')).toBeVisible();
+    await expect(page.locator('#jelly-toggle')).toHaveCount(0);
+  } finally {
+    await app.close();
+  }
+});

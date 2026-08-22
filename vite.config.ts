@@ -4,10 +4,15 @@ export default defineConfig(async () => {
   const { default: typegpuPlugin } = await import('unplugin-typegpu/vite');
   return {
     base: './',
+    input: {
+      burn: 'index.html',
+      jelly: 'jelly-toggle.html',
+    },
     plugins: [typegpuPlugin({ include: /src[\\/]jelly-toggle-3d[\\/].*\.ts$/ })],
     build: {
       outDir: 'dist-renderer',
       emptyOutDir: true,
+      manifest: true,
     },
     test: {
       environment: 'happy-dom',

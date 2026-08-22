@@ -7,8 +7,10 @@
   "packageManager": "pnpm@11.19.0",
   "scripts": {
     "dev": "pnpm build:electron && concurrently -k -s first \"pnpm dev:renderer\" \"pnpm dev:app\"",
+    "dev:jelly": "pnpm build:electron && concurrently -k -s first \"pnpm dev:renderer\" \"pnpm dev:jelly:app\"",
     "dev:renderer": "vite --host 127.0.0.1 --port 5173 --strictPort",
     "dev:app": "wait-on http://127.0.0.1:5173 && electron dist-electron/main.js --dev-server-url=http://127.0.0.1:5173",
+    "dev:jelly:app": "wait-on http://127.0.0.1:5173/jelly-toggle.html && electron dist-electron/main.js --jelly-toggle --dev-server-url=http://127.0.0.1:5173",
     "build:electron": "tsc -p tsconfig.electron.json",
     "build:renderer": "vite build",
     "build": "pnpm build:electron && pnpm build:renderer",

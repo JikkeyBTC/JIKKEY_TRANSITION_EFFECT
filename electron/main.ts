@@ -1,20 +1,30 @@
 import { app, BrowserWindow, ipcMain, type WebContents } from 'electron';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { CAPTURE_VIEWPORT_CHANNEL } from './capture-types';
 import { createCaptureViewportHandler } from './capture-handler';
+import {
+  rendererHtml,
+  rendererDevPath,
+  rendererKind,
+  rendererQuery,
+  requestedDevServerUrl,
+  type RendererKind,
+} from './renderer-route';
 
-const DEV_URL = 'http://127.0.0.1:5173';
 const trustedWebContentsIds = new Set<number>();
+const selectedRenderer = rendererKind(process.argv);
+const selectedDevUrl = requestedDevServerUrl(process.argv);
 
-function requestedDevUrl(): string | undefined {
-  const value = process.argv.find((argument) => argument.startsWith('--dev-server-url='))
-    ?.slice('--dev-server-url='.length);
-  if (value === undefined) return undefined;
-  if (value !== DEV_URL) throw new Error(`Rejected dev server URL: ${value}`);
-  return value;
-}
+function createWindow(kind: RendererKind): BrowserWindow {
+  const html = rendererHtml(kind);
+  const query = rendererQuery(kind, process.argv);
+  const packagedPath = path.join(__dirname, '..', 'dist-renderer', html);
+  const expectedUrl = selectedDevUrl
+    ? new URL(rendererDevPath(kind), selectedDevUrl)
+    : pathToFileURL(packagedPath);
+  for (const [key, value] of Object.entries(query)) expectedUrl.searchParams.set(key, value);
 
-function createWindow(): BrowserWindow {
   const window = new BrowserWindow({
     width: 1_280,
     height: 720,
@@ -24,7 +34,7 @@ function createWindow(): BrowserWindow {
     show: false,
     backgroundColor: '#0c0c0c',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      ...(kind === 'burn' ? { preload: path.join(__dirname, 'preload.js') } : {}),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -32,21 +42,25 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  const trustedId = window.webContents.id;
-  trustedWebContentsIds.add(trustedId);
-  window.webContents.once('destroyed', () => {
-    trustedWebContentsIds.delete(trustedId);
-  });
+  if (kind === 'burn') {
+    const trustedId = window.webContents.id;
+    trustedWebContentsIds.add(trustedId);
+    window.webContents.once('destroyed', () => {
+      trustedWebContentsIds.delete(trustedId);
+    });
+  }
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  window.webContents.on('will-frame-navigate', (event) => event.preventDefault());
+  window.webContents.on('will-frame-navigate', (event) => {
+    if (!event.isMainFrame || event.url !== expectedUrl.href) event.preventDefault();
+  });
   window.once('ready-to-show', () => window.show());
 
-  const devUrl = requestedDevUrl();
-  void (devUrl
-    ? window.loadURL(`${devUrl}${process.argv.includes('--test-mode') ? '/?test=1' : ''}`)
-    : window.loadFile(path.join(__dirname, '..', 'dist-renderer', 'index.html'), {
-        query: process.argv.includes('--test-mode') ? { test: '1' } : {},
-      }));
+  const load = window.loadURL(expectedUrl.href);
+  void load.catch((error: unknown) => {
+    console.error(`Failed to load ${kind} renderer`, error);
+    if (!window.isDestroyed()) window.destroy();
+    if (BrowserWindow.getAllWindows().length === 0 && process.platform !== 'darwin') app.quit();
+  });
   return window;
 }
 
@@ -61,9 +75,9 @@ ipcMain.handle(
 );
 
 void app.whenReady().then(() => {
-  createWindow();
+  createWindow(selectedRenderer);
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(selectedRenderer);
   });
 });
 
