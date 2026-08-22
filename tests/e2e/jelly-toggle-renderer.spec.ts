@@ -26,9 +26,13 @@ test('production page compiles and submits the real WebGPU renderer to idle', as
     app.on('window', observePage);
     const page = await app.firstWindow();
     observePage(page);
-    await page.locator('html[data-jelly-ready="webgpu"]').waitFor();
     const toggle = page.getByRole('switch', { name: 'Jelly toggle' });
+    await expect(toggle).toHaveAttribute('data-jelly-toggle-mode', 'webgpu');
     const canvas = toggle.locator('canvas');
+    await expect(toggle).toHaveCSS('width', '192px');
+    await expect(toggle).toHaveCSS('height', '104px');
+    await expect(canvas).toHaveCSS('width', '176px');
+    await expect(canvas).toHaveCSS('height', '88px');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-checked', 'true');
     await page.waitForTimeout(2_500);

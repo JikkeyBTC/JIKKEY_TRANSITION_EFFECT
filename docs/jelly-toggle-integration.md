@@ -126,7 +126,7 @@ declare function createJellyToggle3D(options: JellyToggle3DOptions): JellyToggle
 
 ## 4. Accessibility
 
-- Keep the real 96 × 52 CSS pixel native button as the input surface; the visible canvas is 88 × 44 pixels and has `pointer-events: none`.
+- The reusable component default remains 96 × 52 CSS pixels with an 88 × 44 canvas. The standalone demo scales that host to 192 × 104 and its visible canvas to 176 × 88, while retaining `pointer-events: none` on the canvas.
 - The factory sets `type="button"`, `role="switch"`, and `aria-checked`. It removes `aria-pressed` so the control exposes one state model.
 - The accessible name stays fixed. `label` wins, followed by an existing `aria-label`, then `Jelly toggle`.
 - Native button click activation supplies mouse, Space, and Enter behavior. Do not add a duplicate keyboard handler.

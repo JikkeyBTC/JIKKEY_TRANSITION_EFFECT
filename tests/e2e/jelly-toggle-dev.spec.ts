@@ -76,7 +76,7 @@ test('Vite dev serves the fully styled standalone control without CSP errors', a
         canvas: [Number.parseFloat(canvas.width), Number.parseFloat(canvas.height)],
       };
     });
-    expect(sizes).toEqual({ control: [96, 52], canvas: [88, 44] });
+    expect(sizes).toEqual({ control: [192, 104], canvas: [176, 88] });
     expect(consoleErrors.filter((message) => /content security policy|refused/i.test(message))).toEqual([]);
   } finally {
     await browser?.close().catch(() => undefined);

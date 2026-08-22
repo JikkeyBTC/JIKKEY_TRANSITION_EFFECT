@@ -46,8 +46,10 @@ test('launches an isolated semantic jelly switch and handles native input', asyn
     const toggle = page.getByRole('switch', { name: 'Jelly toggle' });
     const canvas = toggle.locator('canvas');
     await expect(toggle).toHaveAttribute('aria-checked', 'false');
-    await expect(canvas).toHaveCSS('width', '88px');
-    await expect(canvas).toHaveCSS('height', '44px');
+    await expect(toggle).toHaveCSS('width', '192px');
+    await expect(toggle).toHaveCSS('height', '104px');
+    await expect(canvas).toHaveCSS('width', '176px');
+    await expect(canvas).toHaveCSS('height', '88px');
     expect(await page.evaluate(() => window.burnCapture)).toBeUndefined();
     expect(await app.evaluate(({ BrowserWindow }) => {
       const contents = BrowserWindow.getAllWindows()[0]!.webContents as unknown as {
@@ -132,7 +134,7 @@ test('clamps DPR backing dimensions at 1, 2, and 3', async () => {
   const { app, page } = await launchJelly();
   try {
     const canvas = page.getByRole('switch').locator('canvas');
-    for (const [dpr, expected] of [[1, [88, 44]], [2, [176, 88]], [3, [264, 132]]] as const) {
+    for (const [dpr, expected] of [[1, [176, 88]], [2, [264, 132]], [3, [264, 132]]] as const) {
       await page.evaluate((next) => window.__jellyTest!.setDevicePixelRatio(next), dpr);
       await drain(page, 20);
       expect(await canvas.evaluate((node) => [
@@ -140,6 +142,24 @@ test('clamps DPR backing dimensions at 1, 2, and 3', async () => {
         (node as HTMLCanvasElement).height,
       ])).toEqual(expected);
     }
+  } finally {
+    await app.close();
+  }
+});
+
+test('keeps the approved fixture surface at its original fixed dimensions', async () => {
+  const { app, page } = await launchJelly(['--fixture-capture']);
+  try {
+    const toggle = page.getByRole('switch', { name: 'Jelly toggle' });
+    const canvas = toggle.locator('canvas');
+    await expect(toggle).toHaveCSS('width', '96px');
+    await expect(toggle).toHaveCSS('height', '52px');
+    await expect(canvas).toHaveCSS('width', '88px');
+    await expect(canvas).toHaveCSS('height', '44px');
+    expect(await canvas.evaluate((node) => [
+      (node as HTMLCanvasElement).width,
+      (node as HTMLCanvasElement).height,
+    ])).toEqual([176, 88]);
   } finally {
     await app.close();
   }

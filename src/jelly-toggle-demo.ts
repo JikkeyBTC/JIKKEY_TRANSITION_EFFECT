@@ -71,6 +71,7 @@ const hideWebGpu = testMode && parameters.get('gpu') === 'hidden';
 const deferWebGpu = testMode && parameters.get('init') === 'manual';
 const diagnosticMode = testMode && parameters.get('diagnostic') === '1';
 const fixtureCaptureMode = testMode && parameters.get('fixture') === '1';
+document.documentElement.toggleAttribute('data-jelly-fixture', fixtureCaptureMode);
 const element = (() => {
   const candidate = document.querySelector<HTMLButtonElement>('#jelly-toggle');
   if (!candidate) throw new Error('Missing jelly toggle button');

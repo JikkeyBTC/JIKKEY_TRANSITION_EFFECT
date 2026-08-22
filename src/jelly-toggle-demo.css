@@ -30,7 +30,56 @@ body {
 }
 
 #jelly-toggle {
+  inline-size: 192px;
+  block-size: 104px;
   filter: drop-shadow(0 10px 12px rgb(74 47 18 / 12%));
+}
+
+#jelly-toggle .jelly-toggle-3d__canvas {
+  inline-size: 176px;
+  block-size: 88px;
+}
+
+#jelly-toggle .jelly-toggle-3d__fallback {
+  inline-size: 104px;
+  block-size: 56px;
+  border-width: 4px;
+}
+
+#jelly-toggle .jelly-toggle-3d__fallback::before {
+  inline-size: 40px;
+  block-size: 40px;
+  inset: 4px auto auto 4px;
+}
+
+#jelly-toggle[aria-checked='true'] .jelly-toggle-3d__fallback::before {
+  transform: translateX(48px);
+}
+
+html[data-jelly-fixture] #jelly-toggle {
+  inline-size: 96px;
+  block-size: 52px;
+}
+
+html[data-jelly-fixture] #jelly-toggle .jelly-toggle-3d__canvas {
+  inline-size: 88px;
+  block-size: 44px;
+}
+
+html[data-jelly-fixture] #jelly-toggle .jelly-toggle-3d__fallback {
+  inline-size: 52px;
+  block-size: 28px;
+  border-width: 2px;
+}
+
+html[data-jelly-fixture] #jelly-toggle .jelly-toggle-3d__fallback::before {
+  inline-size: 20px;
+  block-size: 20px;
+  inset: 2px auto auto 2px;
+}
+
+html[data-jelly-fixture] #jelly-toggle[aria-checked='true'] .jelly-toggle-3d__fallback::before {
+  transform: translateX(24px);
 }
 
 @media (forced-colors: active) {
