@@ -8,6 +8,9 @@ export default defineConfig(async () => {
       burn: 'index.html',
       jelly: 'jelly-toggle.html',
     },
+    html: {
+      cspNonce: 'jelly-toggle-vite',
+    },
     plugins: [typegpuPlugin({ include: /src[\\/]jelly-toggle-3d[\\/].*\.ts$/ })],
     build: {
       outDir: 'dist-renderer',

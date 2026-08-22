@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { _electron as electron, type ElectronApplication } from 'playwright';
+import { _electron as electron, type ElectronApplication, type Page } from 'playwright';
 import path from 'node:path';
 import { PNG } from 'pngjs';
 
@@ -9,16 +9,23 @@ test('production page compiles and submits the real WebGPU renderer to idle', as
   let app: ElectronApplication | undefined;
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
+  const observedPages = new WeakSet<Page>();
+  const observePage = (page: Page): void => {
+    if (observedPages.has(page)) return;
+    observedPages.add(page);
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+  };
   try {
     app = await electron.launch({
       executablePath: electronPath,
       args: [path.join(process.cwd(), 'dist-electron', 'main.js'), '--jelly-toggle'],
     });
+    app.on('window', observePage);
     const page = await app.firstWindow();
-    page.on('console', (message) => {
-      if (message.type() === 'error') consoleErrors.push(message.text());
-    });
-    page.on('pageerror', (error) => pageErrors.push(error.message));
+    observePage(page);
     await page.locator('html[data-jelly-ready="webgpu"]').waitFor();
     const toggle = page.getByRole('switch', { name: 'Jelly toggle' });
     const canvas = toggle.locator('canvas');

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  blockUnexpectedNavigation,
   requestedDevServerUrl,
   rendererHtml,
   rendererDevPath,
@@ -50,5 +51,23 @@ describe('Electron renderer routing', () => {
       '--dev-server-url=http://127.0.0.1:5173',
       '--dev-server-url=http://127.0.0.1:5173',
     ])).toThrow('Expected at most one dev server URL');
+  });
+
+  it('allows only the exact expected main-frame navigation or redirect', () => {
+    const expected = 'https://renderer.invalid/jelly-toggle.html?test=1';
+    const attempt = (url: string, isMainFrame: boolean) => {
+      let prevented = false;
+      const allowed = blockUnexpectedNavigation({
+        url,
+        isMainFrame,
+        preventDefault: () => { prevented = true; },
+      }, expected);
+      return { allowed, prevented };
+    };
+
+    expect(attempt(expected, true)).toEqual({ allowed: true, prevented: false });
+    expect(attempt(`${expected}#redirected`, true)).toEqual({ allowed: false, prevented: true });
+    expect(attempt('https://renderer.invalid/other', true)).toEqual({ allowed: false, prevented: true });
+    expect(attempt(expected, false)).toEqual({ allowed: false, prevented: true });
   });
 });

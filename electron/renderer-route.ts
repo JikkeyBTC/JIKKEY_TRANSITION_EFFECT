@@ -2,6 +2,21 @@ export const DEV_SERVER_URL = 'http://127.0.0.1:5173' as const;
 
 export type RendererKind = 'burn' | 'jelly';
 
+export interface PreventableNavigation {
+  readonly url: string;
+  readonly isMainFrame: boolean;
+  preventDefault(): void;
+}
+
+export function blockUnexpectedNavigation(
+  navigation: PreventableNavigation,
+  expectedUrl: string,
+): boolean {
+  const allowed = navigation.isMainFrame && navigation.url === expectedUrl;
+  if (!allowed) navigation.preventDefault();
+  return allowed;
+}
+
 export function rendererKind(argv: readonly string[]): RendererKind {
   return argv.includes('--jelly-toggle') ? 'jelly' : 'burn';
 }

@@ -75,8 +75,11 @@ test('preserves velocity through rapid reversal and ends at the latest target', 
   try {
     const toggle = page.getByRole('switch', { name: 'Jelly toggle' });
     await toggle.click();
-    await page.evaluate(() => window.__jellyTest!.step(15 * 1000 / 60));
+    for (let tick = 0; tick < 15; tick += 1) {
+      await page.evaluate(() => window.__jellyTest!.step(1000 / 60));
+    }
     const before = await page.evaluate(() => window.__jellyTest!.pose());
+    expect(before?.ticksSinceTargetChange).toBe(15);
     await toggle.click();
     const after = await page.evaluate(() => window.__jellyTest!.pose());
     if (!before || !after) throw new Error('Missing test physics snapshot');

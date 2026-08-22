@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { CAPTURE_VIEWPORT_CHANNEL } from './capture-types';
 import { createCaptureViewportHandler } from './capture-handler';
 import {
+  blockUnexpectedNavigation,
   rendererHtml,
   rendererDevPath,
   rendererKind,
@@ -51,7 +52,10 @@ function createWindow(kind: RendererKind): BrowserWindow {
   }
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   window.webContents.on('will-frame-navigate', (event) => {
-    if (!event.isMainFrame || event.url !== expectedUrl.href) event.preventDefault();
+    blockUnexpectedNavigation(event, expectedUrl.href);
+  });
+  window.webContents.on('will-redirect', (event) => {
+    blockUnexpectedNavigation(event, expectedUrl.href);
   });
   window.once('ready-to-show', () => window.show());
 
